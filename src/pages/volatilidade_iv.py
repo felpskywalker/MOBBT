@@ -3,6 +3,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy import stats
+from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
+import plotly.graph_objects as go
 from src.data_loaders.fred_api import carregar_dados_fred
 from src.models.amplitude import analisar_retornos_por_faixa
 from src.components.charts_amplitude import (
@@ -14,6 +17,123 @@ from src.components.charts_amplitude import (
     gerar_grafico_roc_volatilidade,
     gerar_grafico_iv_rank
 )
+from src.models.put_utils import get_selic_annual, get_third_friday, generate_put_ticker, get_asset_price_yesterday
+from src.data_loaders.b3_api import fetch_option_price_b3
+from src.models.black_scholes import implied_volatility
+
+def calcular_term_structure(asset_ticker, asset_price, selic_annual, num_vencimentos=6):
+    """
+    Calcula a estrutura a termo da volatilidade implícita para opções ATM.
+    
+    Returns:
+        DataFrame com colunas: days_to_exp, iv, expiry_date
+    """
+    current_date = date.today()
+    results = []
+    
+    # Gera vencimentos futuros (próximos N meses)
+    for i in range(1, num_vencimentos + 1):
+        try:
+            future_date = current_date + relativedelta(months=i)
+            expiry = get_third_friday(future_date.year, future_date.month)
+            days_to_exp = (expiry - current_date).days
+            
+            if days_to_exp <= 0:
+                continue
+            
+            # Encontra strike ATM (arredondado)
+            atm_strike = round(asset_price, 0)
+            
+            # Gera ticker da opção PUT ATM
+            option_ticker = generate_put_ticker(asset_ticker[:4], expiry, atm_strike)
+            
+            # Busca preço na B3
+            b3_data = fetch_option_price_b3(option_ticker)
+            
+            if b3_data and b3_data['last_price'] > 0:
+                option_price = b3_data['last_price']
+                T = max(days_to_exp / 365.0, 0.001)
+                r = selic_annual / 100
+                
+                # Calcula IV
+                try:
+                    iv = implied_volatility(option_price, asset_price, atm_strike, T, r)
+                    iv_pct = iv * 100
+                    
+                    if 5 < iv_pct < 200:  # Filtra valores absurdos
+                        results.append({
+                            'days_to_exp': days_to_exp,
+                            'iv': iv_pct,
+                            'expiry_date': expiry,
+                            'strike': atm_strike,
+                            'option_ticker': option_ticker,
+                            'option_price': option_price
+                        })
+                except:
+                    pass
+        except Exception as e:
+            continue
+    
+    return pd.DataFrame(results)
+
+def gerar_grafico_term_structure(df_term):
+    """Gera gráfico de estrutura a termo da IV"""
+    if df_term.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            title_text="Sem dados disponíveis para Term Structure",
+            template='brokeberg'
+        )
+        return fig
+    
+    fig = go.Figure()
+    
+    # Linha principal
+    fig.add_trace(go.Scatter(
+        x=df_term['days_to_exp'],
+        y=df_term['iv'],
+        mode='lines+markers',
+        name='IV ATM',
+        line=dict(color='#00E676', width=2),
+        marker=dict(size=10, color='#00E676')
+    ))
+    
+    # Anotações com os vencimentos
+    for _, row in df_term.iterrows():
+        fig.add_annotation(
+            x=row['days_to_exp'],
+            y=row['iv'],
+            text=f"{row['expiry_date'].strftime('%d/%m')}",
+            showarrow=False,
+            yshift=15,
+            font=dict(size=10, color='gray')
+        )
+    
+    # Linha de tendência (regressão linear)
+    if len(df_term) >= 2:
+        z = np.polyfit(df_term['days_to_exp'], df_term['iv'], 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(df_term['days_to_exp'].min(), df_term['days_to_exp'].max(), 50)
+        fig.add_trace(go.Scatter(
+            x=x_line,
+            y=p(x_line),
+            mode='lines',
+            name='Tendência',
+            line=dict(color='rgba(255,255,255,0.3)', width=1, dash='dash')
+        ))
+    
+    fig.update_layout(
+        title_text='Estrutura a Termo da Volatilidade Implícita',
+        title_x=0,
+        template='brokeberg',
+        xaxis_title="Dias até Vencimento",
+        yaxis_title="Volatilidade Implícita (%)",
+        showlegend=False,
+        height=400
+    )
+    
+    return fig
+
 
 def calcular_iv_rank(series, periodo=252):
     """Calcula o IV Rank rolling baseado em um período."""
@@ -139,7 +259,96 @@ def render():
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 2: HISTÓRICO VXEWZ (do market_breadth)
+    # SEÇÃO 2: TERM STRUCTURE (Estrutura a Termo)
+    # ===========================================
+    st.subheader("📈 Estrutura a Termo da IV (Term Structure)")
+    
+    with st.expander("ℹ️ **O que é a Estrutura a Termo da Volatilidade?**", expanded=False):
+        st.markdown("""
+        ### Term Structure da Volatilidade Implícita
+        
+        A **Estrutura a Termo** mostra como a volatilidade implícita varia entre diferentes vencimentos 
+        de opções. É a "curva de juros" da volatilidade.
+        
+        #### Formatos da curva:
+        
+        📈 **Contango (curva ascendente)** - IV aumenta com o tempo:
+        - Estado **normal** do mercado
+        - Incerteza de longo prazo maior que curto prazo
+        - Mercado "calmo" no curto prazo
+        
+        📉 **Backwardation (curva descendente)** - IV diminui com o tempo:
+        - Estado de **stress** do mercado
+        - Medo concentrado no curto prazo
+        - Geralmente ocorre durante crises ou eventos
+        
+        ➡️ **Flat (curva plana)** - IV similar em todos os vencimentos:
+        - Transição entre regimes
+        - Incerteza generalizada
+        
+        #### Como usar:
+        - **Entrada em backwardation**: Sinal de alerta
+        - **Saída de backwardation para contango**: Possível fim do stress
+        - **Steepness da curva**: Inclinação indica intensidade do regime
+        """)
+    
+    # Input para escolher ativo
+    col_term1, col_term2 = st.columns([1, 3])
+    with col_term1:
+        term_asset = st.text_input("Ativo para Term Structure", value="BOVA11", 
+                                   help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
+    
+    if term_asset:
+        with st.spinner(f"Buscando opções ATM de {term_asset} na B3..."):
+            try:
+                # Busca preço do ativo
+                asset_price = get_asset_price_yesterday(term_asset)
+                selic = get_selic_annual()
+                
+                if asset_price > 0:
+                    # Calcula term structure
+                    df_term = calcular_term_structure(term_asset, asset_price, selic, num_vencimentos=6)
+                    
+                    if not df_term.empty:
+                        col_term_chart, col_term_info = st.columns([3, 1])
+                        
+                        with col_term_chart:
+                            st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True)
+                        
+                        with col_term_info:
+                            st.metric("Preço Atual", f"R$ {asset_price:.2f}")
+                            st.metric("Selic Anual", f"{selic:.2f}%")
+                            
+                            # Análise da inclinação
+                            if len(df_term) >= 2:
+                                slope = (df_term['iv'].iloc[-1] - df_term['iv'].iloc[0]) / (df_term['days_to_exp'].iloc[-1] - df_term['days_to_exp'].iloc[0])
+                                if slope > 0.01:
+                                    st.success("📈 **CONTANGO** - Curva normal")
+                                elif slope < -0.01:
+                                    st.error("📉 **BACKWARDATION** - Stress")
+                                else:
+                                    st.info("➡️ **FLAT** - Curva plana")
+                                    
+                                st.metric("IV Curto Prazo", f"{df_term['iv'].iloc[0]:.1f}%")
+                                st.metric("IV Longo Prazo", f"{df_term['iv'].iloc[-1]:.1f}%")
+                        
+                        # Tabela com detalhes
+                        with st.expander("📋 Detalhes por Vencimento"):
+                            df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
+                            df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
+                            df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                            st.dataframe(df_display, hide_index=True, use_container_width=True)
+                    else:
+                        st.warning(f"Não foram encontradas opções ATM com liquidez para {term_asset}. Tente outro ativo.")
+                else:
+                    st.error(f"Não foi possível obter o preço de {term_asset}")
+            except Exception as e:
+                st.error(f"Erro ao calcular Term Structure: {e}")
+
+    st.markdown("---")
+
+    # ===========================================
+    # SEÇÃO 3: HISTÓRICO VXEWZ (do market_breadth)
     # ===========================================
     st.subheader("📉 Histórico do VXEWZ")
     
@@ -157,7 +366,7 @@ def render():
     
     col_graf, col_hist = st.columns([2, 1])
     with col_graf:
-        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_recent, "Histórico VXEWZ", valor_atual, media_hist), use_container_width=True)
+        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_series, "Histórico VXEWZ", valor_atual, media_hist), use_container_width=True)
     with col_hist:
         st.plotly_chart(gerar_histograma_amplitude(vxewz_recent, "Distribuição", valor_atual, media_hist, nbins=50), use_container_width=True)
 
