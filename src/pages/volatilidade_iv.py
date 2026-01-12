@@ -48,11 +48,29 @@ def interpretar_regime(mm21, mm63):
         return "🔵 **CONTANGO FORTE** - Mercado muito calmo. Volatilidade de curto prazo bem abaixo da média."
 
 def render():
-    st.header("Análise de Volatilidade Implícita (VXEWZ)")
-    st.info(
-        "O índice **VXEWZ** mede a volatilidade implícita das opções do ETF EWZ (iShares MSCI Brazil). "
-        "Valores altos indicam stress e medo no mercado brasileiro, enquanto valores baixos indicam complacência."
-    )
+    st.header("📊 Análise de Volatilidade Implícita (VXEWZ)")
+    
+    # Explicação inicial detalhada
+    with st.expander("ℹ️ **O que é o VXEWZ e por que ele importa?**", expanded=False):
+        st.markdown("""
+        ### O Índice VXEWZ
+        
+        O **VXEWZ** (CBOE Brazil ETF Volatility Index) é o "índice do medo" do mercado brasileiro. 
+        Ele mede a **volatilidade implícita** das opções do ETF EWZ (iShares MSCI Brazil), que é 
+        negociado nos Estados Unidos e replica o desempenho das ações brasileiras.
+        
+        #### Como interpretar:
+        - **Valores baixos (< 20)**: Mercado complacente, investidores confiantes. Opções estão "baratas".
+        - **Valores médios (20-30)**: Normalidade do mercado brasileiro.
+        - **Valores altos (> 35)**: Stress, medo e incerteza. Opções estão "caras".
+        - **Picos extremos (> 50)**: Pânico. Geralmente coincide com crises ou eventos extremos.
+        
+        #### Por que acompanhar:
+        1. **Timing de operações**: IV alto = momento de vender opções; IV baixo = momento de comprar opções
+        2. **Sentimento do mercado**: Antecipa movimentos de stress antes que eles se materializem nos preços
+        3. **Proteção de carteira**: Ajuda a decidir quando comprar proteção (puts) está barato ou caro
+        """)
+    
     st.markdown("---")
 
     FRED_API_KEY = 'd78668ca6fc142a1248f7cb9132916b0'
@@ -93,7 +111,7 @@ def render():
     # ===========================================
     # SEÇÃO 1: MÉTRICAS PRINCIPAIS
     # ===========================================
-    st.subheader("📊 Métricas Principais")
+    st.subheader("📈 Métricas Principais")
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -111,7 +129,7 @@ def render():
         st.metric("Máx 252d", f"{vxewz_series.rolling(252).max().iloc[-1]:.2f}")
 
     # Interpretação
-    st.markdown("### 📝 Interpretação")
+    st.markdown("### 📝 Diagnóstico Atual")
     col_int1, col_int2 = st.columns(2)
     with col_int1:
         st.markdown(f"**IV Rank:** {interpretar_iv_rank(iv_rank_atual, percentil)}")
@@ -121,44 +139,196 @@ def render():
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 2: IV RANK HISTÓRICO
+    # SEÇÃO 2: HISTÓRICO VXEWZ (do market_breadth)
     # ===========================================
-    st.subheader("📈 IV Rank Histórico")
+    st.subheader("📉 Histórico do VXEWZ")
+    
+    with st.expander("ℹ️ **Como ler este gráfico**", expanded=False):
+        st.markdown("""
+        Este é o gráfico histórico do índice VXEWZ mostrando a evolução da volatilidade implícita ao longo do tempo.
+        
+        - **Linha azul**: Valor do VXEWZ
+        - **Linha tracejada cinza**: Média histórica (5 anos)
+        - **Linha pontilhada amarela**: Valor atual
+        - **Botões de período**: Selecione 6M, 1A, 2A, 5A ou Tudo para ajustar a visualização
+        
+        **Dica**: Use a roda do mouse para dar zoom no gráfico!
+        """)
+    
+    col_graf, col_hist = st.columns([2, 1])
+    with col_graf:
+        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_recent, "Histórico VXEWZ", valor_atual, media_hist), use_container_width=True)
+    with col_hist:
+        st.plotly_chart(gerar_histograma_amplitude(vxewz_recent, "Distribuição", valor_atual, media_hist, nbins=50), use_container_width=True)
+
+    st.markdown("---")
+
+    # ===========================================
+    # SEÇÃO 3: IV RANK HISTÓRICO
+    # ===========================================
+    st.subheader("🎯 IV Rank Histórico")
+    
+    with st.expander("ℹ️ **O que é IV Rank e como usar**", expanded=False):
+        st.markdown("""
+        ### IV Rank (Ranking de Volatilidade Implícita)
+        
+        O **IV Rank** indica onde a volatilidade atual se encontra em relação ao seu range dos últimos 252 dias (1 ano).
+        
+        **Fórmula**: `(IV_atual - IV_mín_252d) / (IV_máx_252d - IV_mín_252d) × 100`
+        
+        #### Interpretação:
+        | IV Rank | Significado | Estratégia |
+        |---------|-------------|------------|
+        | 0-20% | IV muito baixa vs último ano | Comprar opções (prêmios baratos) |
+        | 20-40% | IV abaixo da média | Neutro a comprador |
+        | 40-60% | IV na média | Neutro |
+        | 60-80% | IV acima da média | Neutro a vendedor |
+        | 80-100% | IV muito alta vs último ano | Vender opções (prêmios altos) |
+        
+        #### Diferença entre IV Rank e Percentil:
+        - **IV Rank**: Posição relativa ao mínimo/máximo do período
+        - **Percentil**: % de dias em que a IV foi menor que a atual
+        
+        Um IV Rank de 90% significa que estamos **próximos da máxima** do ano.
+        Um Percentil de 90% significa que 90% dos dias tiveram IV **menor** que hoje.
+        """)
+    
     st.plotly_chart(gerar_grafico_iv_rank(iv_rank_series), use_container_width=True)
     
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 3: VXEWZ COM BANDAS DE BOLLINGER
+    # SEÇÃO 4: VXEWZ COM BANDAS DE BOLLINGER
     # ===========================================
-    st.subheader("📉 VXEWZ com Bandas de Bollinger")
-    st.caption("Bandas de 2 desvios padrão (20 períodos). Toques na banda superior indicam volatilidade extrema.")
+    st.subheader("📊 VXEWZ com Bandas de Bollinger")
+    
+    with st.expander("ℹ️ **Como interpretar as Bandas de Bollinger na Volatilidade**", expanded=False):
+        st.markdown("""
+        ### Bandas de Bollinger aplicadas ao VXEWZ
+        
+        As bandas consistem em:
+        - **Linha central (laranja)**: Média móvel de 20 períodos
+        - **Banda superior**: MM20 + 2 desvios padrão
+        - **Banda inferior**: MM20 - 2 desvios padrão
+        - **Área sombreada**: Região entre as bandas
+        
+        #### Sinais importantes:
+        
+        🔴 **Toque na banda superior**: Volatilidade extremamente elevada. Geralmente indica:
+        - Pico de stress/medo
+        - Possível reversão à média (IV tende a cair)
+        - Bom momento para vender opções
+        
+        🔵 **Toque na banda inferior**: Volatilidade extremamente baixa. Geralmente indica:
+        - Complacência excessiva
+        - Possível aumento de volatilidade
+        - Bom momento para comprar opções/proteção
+        
+        ⚠️ **Volatilidade é mean-reverting**: Ela tende a voltar para a média. Extremos são oportunidades!
+        """)
+    
     st.plotly_chart(gerar_grafico_iv_bandas(vxewz_series), use_container_width=True)
 
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 4: REGIME DE VOLATILIDADE
+    # SEÇÃO 5: REGIME DE VOLATILIDADE
     # ===========================================
     st.subheader("🔄 Regime de Volatilidade (Contango vs Backwardation)")
-    st.caption("Compara MM21 vs MM63. Backwardation (vermelho) indica stress; Contango (verde) indica normalidade.")
+    
+    with st.expander("ℹ️ **Entendendo os regimes de volatilidade**", expanded=False):
+        st.markdown("""
+        ### Contango vs Backwardation
+        
+        Este gráfico compara a volatilidade de **curto prazo (MM21)** com a de **médio prazo (MM63)**.
+        
+        #### Contango (área verde - spread negativo):
+        - MM21 < MM63
+        - Volatilidade de curto prazo **menor** que a de médio prazo
+        - **Estado normal** do mercado
+        - Investidores não estão preocupados com o curto prazo
+        
+        #### Backwardation (área vermelha - spread positivo):
+        - MM21 > MM63
+        - Volatilidade de curto prazo **maior** que a de médio prazo
+        - **Estado de stress** do mercado
+        - Investidores estão pagando prêmio por proteção de curto prazo
+        - Geralmente coincide com correções ou crises
+        
+        #### Como usar:
+        - **Entrada em backwardation**: Sinal de alerta - considere proteção
+        - **Saída de backwardation**: Possível fim do stress - oportunidade de compra
+        - **Contango prolongado**: Complacência - cuidado com surpresas
+        """)
+    
     st.plotly_chart(gerar_grafico_regime_volatilidade(vxewz_series), use_container_width=True)
 
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 5: TAXA DE VARIAÇÃO (ROC)
+    # SEÇÃO 6: TAXA DE VARIAÇÃO (ROC)
     # ===========================================
     st.subheader("🚀 Taxa de Variação da Volatilidade (ROC)")
-    st.caption("Mede o momentum da volatilidade. Spikes acima de +50% indicam eventos de stress agudo.")
+    
+    with st.expander("ℹ️ **Interpretando o momentum da volatilidade**", expanded=False):
+        st.markdown("""
+        ### Rate of Change (ROC) da Volatilidade
+        
+        O ROC mede a **velocidade de mudança** da volatilidade em dois horizontes:
+        - **ROC 5d (azul)**: Variação percentual nos últimos 5 dias úteis
+        - **ROC 21d (laranja)**: Variação percentual nos últimos 21 dias úteis (1 mês)
+        
+        #### Interpretação:
+        
+        📈 **Spike positivo (> +50%)**:
+        - Evento de stress agudo
+        - Volatilidade explodiu rapidamente
+        - Geralmente coincide com quedas bruscas do mercado
+        - Após o spike, IV tende a normalizar (mean reversion)
+        
+        📉 **Queda acentuada (< -30%)**:
+        - Volatilidade colapsando
+        - Mercado entrando em modo de complacência
+        - Pode indicar fim de crise ou início de rally
+        
+        #### Uso prático:
+        - Spikes extremos no ROC 5d são oportunidades para vender volatilidade
+        - Divergências entre ROC 5d e ROC 21d podem indicar mudanças de regime
+        """)
+    
     st.plotly_chart(gerar_grafico_roc_volatilidade(vxewz_series), use_container_width=True)
 
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 6: DISTRIBUIÇÃO E HEATMAPS
+    # SEÇÃO 7: HEATMAPS DE RETORNO POR FAIXA DE IV RANK
     # ===========================================
-    st.subheader("📊 Distribuição e Análise de Retornos por Faixa de IV Rank")
+    st.subheader("🗺️ Análise de Retornos por Faixa de IV Rank")
+    
+    with st.expander("ℹ️ **Como ler os heatmaps**", expanded=False):
+        st.markdown("""
+        ### Heatmaps de Retorno vs IV Rank
+        
+        Estes heatmaps mostram o **retorno médio** e **taxa de acerto** do mercado brasileiro 
+        (BOVA11/SMAL11) em diferentes horizontes de tempo, agrupados por faixa de IV Rank.
+        
+        #### Retorno Médio:
+        - Mostra o retorno percentual médio para cada combinação de IV Rank e horizonte
+        - Cores verdes = retornos positivos
+        - Cores vermelhas = retornos negativos
+        
+        #### Taxa de Acerto:
+        - % de vezes que o retorno foi positivo para cada combinação
+        - Valores acima de 50% = mais vezes positivo que negativo
+        
+        #### Como usar:
+        - Identifique quais faixas de IV Rank têm melhor retorno histórico
+        - A borda branca indica a faixa atual do IV Rank
+        - Use como guia probabilístico, não como regra absoluta
+        
+        **Exemplo**: Se IV Rank 80-100% tem retorno médio de +8% em 3 meses com taxa de acerto de 70%, 
+        significa que historicamente foi bom comprar o mercado quando a IV estava muito alta.
+        """)
 
     # Preparar dados para heatmap
     import yfinance as yf
@@ -213,7 +383,57 @@ def render():
     st.markdown("---")
 
     # ===========================================
-    # SEÇÃO 7: ESTATÍSTICAS DESCRITIVAS
+    # SEÇÃO 8: HEATMAPS POR NÍVEL ABSOLUTO DE VXEWZ
+    # ===========================================
+    st.subheader("🗺️ Análise de Retornos por Nível de VXEWZ")
+    
+    with st.expander("ℹ️ **Diferença entre IV Rank e Nível Absoluto**", expanded=False):
+        st.markdown("""
+        ### Por que analisar pelo nível absoluto também?
+        
+        O **IV Rank** normaliza a volatilidade pelo range do último ano, mas o **nível absoluto** 
+        do VXEWZ também carrega informação importante.
+        
+        Por exemplo:
+        - VXEWZ = 25 com IV Rank = 80% significa que 25 é alto *para o último ano*
+        - VXEWZ = 25 historicamente pode ser um nível "normal" ou até baixo
+        
+        Analisar por faixas absolutas (20-25, 25-30, etc.) ajuda a entender o comportamento 
+        do mercado em diferentes *níveis* de volatilidade, independente do contexto recente.
+        """)
+    
+    # Análise por faixa de VXEWZ absoluto
+    vxewz_for_analysis = vxewz_series.rename('VXEWZ')
+    df_analise_vx = df_analise_base.join(vxewz_for_analysis, how='inner').dropna()
+    
+    passo_vx = 5
+    min_vx = int(np.floor(vxewz_recent.min() / passo_vx)) * passo_vx
+    max_vx = int(np.ceil(vxewz_recent.max() / passo_vx)) * passo_vx
+    if max_vx == min_vx: max_vx += passo_vx
+    
+    resultados_vx = analisar_retornos_por_faixa(df_analise_vx, 'VXEWZ', passo_vx, min_vx, max_vx, '')
+    
+    faixa_atual_vx_val = int(valor_atual // passo_vx) * passo_vx
+    faixa_atual_vx = f'{faixa_atual_vx_val} a {faixa_atual_vx_val + passo_vx}'
+
+    for ativo in ATIVOS_ANALISE:
+        ativo_clean = ativo.replace('.SA', '')
+        sufixo = f" ({ativo_clean})"
+        st.markdown(f"**{ativo}**")
+        cols_ativo = [c for c in resultados_vx['Retorno Médio'].columns if ativo_clean in c]
+        
+        if cols_ativo:
+            df_ret = resultados_vx['Retorno Médio'][cols_ativo].rename(columns=lambda x: x.replace(sufixo, ''))
+            df_hit = resultados_vx['Taxa de Acerto'][cols_ativo].rename(columns=lambda x: x.replace(sufixo, ''))
+            
+            c1, c2 = st.columns(2)
+            c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual_vx, "Retorno Médio"), use_container_width=True)
+            c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual_vx, "Taxa de Acerto"), use_container_width=True)
+
+    st.markdown("---")
+
+    # ===========================================
+    # SEÇÃO 9: ESTATÍSTICAS DESCRITIVAS
     # ===========================================
     with st.expander("📋 Estatísticas Descritivas Completas"):
         col_stat1, col_stat2 = st.columns(2)
