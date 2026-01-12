@@ -135,6 +135,129 @@ def gerar_grafico_term_structure(df_term):
     return fig
 
 
+def calcular_volatility_skew(asset_ticker, asset_price, selic_annual, expiry_date):
+    """
+    Calcula a volatilidade implícita para diferentes strikes (Volatility Skew).
+    
+    Args:
+        asset_ticker: ticker do ativo (ex: BOVA11)
+        asset_price: preço atual do ativo
+        selic_annual: taxa selic anual (%)
+        expiry_date: data de vencimento da opção
+    
+    Returns:
+        DataFrame com colunas: strike, moneyness, iv, option_ticker, option_price
+    """
+    current_date = date.today()
+    days_to_exp = (expiry_date - current_date).days
+    
+    if days_to_exp <= 0:
+        return pd.DataFrame()
+    
+    results = []
+    
+    # Define strikes em diferentes níveis de moneyness
+    # Para PUTs: OTM = strike < spot, ITM = strike > spot
+    moneyness_levels = [0.85, 0.90, 0.95, 1.00, 1.05, 1.10]
+    
+    for moneyness in moneyness_levels:
+        try:
+            strike = round(asset_price * moneyness, 0)
+            
+            # Gera ticker da opção PUT
+            option_ticker = generate_put_ticker(asset_ticker[:4], expiry_date, strike)
+            
+            # Busca preço na B3
+            b3_data = fetch_option_price_b3(option_ticker)
+            
+            if b3_data and b3_data['last_price'] > 0:
+                option_price = b3_data['last_price']
+                T = max(days_to_exp / 365.0, 0.001)
+                r = selic_annual / 100
+                
+                # Calcula IV
+                try:
+                    iv = implied_volatility(option_price, asset_price, strike, T, r)
+                    iv_pct = iv * 100
+                    
+                    if 5 < iv_pct < 200:  # Filtra valores absurdos
+                        results.append({
+                            'strike': strike,
+                            'moneyness': (moneyness - 1) * 100,  # % em relação ao ATM
+                            'moneyness_pct': moneyness * 100,
+                            'iv': iv_pct,
+                            'option_ticker': option_ticker,
+                            'option_price': option_price
+                        })
+                except:
+                    pass
+        except Exception as e:
+            continue
+    
+    return pd.DataFrame(results)
+
+
+def gerar_grafico_skew(df_skew, asset_ticker):
+    """Gera gráfico de Volatility Skew (IV vs Moneyness)"""
+    if df_skew.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            title_text="Sem dados disponíveis para Volatility Skew",
+            template='brokeberg'
+        )
+        return fig
+    
+    fig = go.Figure()
+    
+    # Linha do Skew
+    fig.add_trace(go.Scatter(
+        x=df_skew['moneyness'],
+        y=df_skew['iv'],
+        mode='lines+markers',
+        name='IV',
+        line=dict(color='#FF6D00', width=3),
+        marker=dict(size=12, color='#FF6D00', symbol='circle')
+    ))
+    
+    # Marca o ponto ATM
+    atm_row = df_skew[df_skew['moneyness'].abs() < 1]
+    if not atm_row.empty:
+        fig.add_trace(go.Scatter(
+            x=atm_row['moneyness'],
+            y=atm_row['iv'],
+            mode='markers',
+            name='ATM',
+            marker=dict(size=18, color='#00E676', symbol='star')
+        ))
+    
+    # Linha vertical no ATM
+    fig.add_vline(x=0, line_dash="dash", line_color="rgba(255,255,255,0.3)")
+    
+    # Anotações dos strikes
+    for _, row in df_skew.iterrows():
+        label = "ATM" if abs(row['moneyness']) < 1 else f"K={int(row['strike'])}"
+        fig.add_annotation(
+            x=row['moneyness'],
+            y=row['iv'],
+            text=label,
+            showarrow=False,
+            yshift=20,
+            font=dict(size=9, color='gray')
+        )
+    
+    fig.update_layout(
+        title_text=f'Volatility Skew - {asset_ticker} (PUT)',
+        title_x=0,
+        template='brokeberg',
+        xaxis_title="Moneyness (% vs ATM)",
+        yaxis_title="Volatilidade Implícita (%)",
+        showlegend=False,
+        height=400
+    )
+    
+    return fig
+
+
 def calcular_iv_rank(series, periodo=252):
     """Calcula o IV Rank rolling baseado em um período."""
     iv_min = series.rolling(window=periodo).min()
@@ -358,6 +481,140 @@ def render():
                     st.error(f"Não foi possível obter o preço de {term_asset}")
             except Exception as e:
                 st.error(f"Erro ao calcular Term Structure: {e}")
+
+    st.markdown("---")
+
+    # ===========================================
+    # SEÇÃO: VOLATILITY SKEW
+    # ===========================================
+    st.subheader("📐 Volatility Skew")
+    
+    with st.expander("ℹ️ **O que é Volatility Skew e como interpretar?**", expanded=False):
+        st.markdown("""
+        ### Volatility Skew (Inclinação da Volatilidade)
+        
+        O **Volatility Skew** mostra como a volatilidade implícita varia entre diferentes **strikes** 
+        para um **mesmo vencimento**. É também conhecido como "smile" ou "smirk" de volatilidade.
+        
+        #### Formatos típicos:
+        
+        😊 **Smile (U invertido)** - IV maior nos extremos:
+        - Comum em índices e commodities
+        - Investidores precificam eventos de cauda (tanto quedas quanto altas)
+        
+        😏 **Smirk (inclinação negativa)** - IV maior em OTM:
+        - **Formato mais comum em ações e índices de ações**
+        - PUTs OTM (strike < spot) têm IV maior que CALLs OTM
+        - Reflete demanda por proteção contra quedas
+        - Indica que o mercado precifica mais risco de downside
+        
+        📏 **Flat (plano)** - IV similar em todos strikes:
+        - Raro na prática
+        - Pode indicar evento binário (resultado 50/50)
+        
+        #### Métricas importantes:
+        
+        - **Skew Ratio (25Δ)**: IV(5% OTM) / IV(ATM)
+          - Maior que 1.0 = demanda elevada por proteção
+          - Valores típicos: 1.05 a 1.20 para índices
+          - Picos acima de 1.30 indicam stress extremo
+        
+        #### Como usar:
+        - Skew alto = proteção cara → vender PUTs OTM pode ser interessante
+        - Skew baixo = proteção barata → comprar proteção pode valer a pena
+        - Compare o skew atual com médias históricas
+        """)
+    
+    # Input para escolher ativo e vencimento
+    col_skew1, col_skew2 = st.columns([1, 1])
+    with col_skew1:
+        skew_asset = st.text_input("Ativo para Skew Analysis", value="BOVA11", key="skew_asset",
+                                   help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
+    with col_skew2:
+        skew_months = st.selectbox("Vencimento", options=[1, 2, 3], index=0, 
+                                   format_func=lambda x: f"{x} mês" if x == 1 else f"{x} meses",
+                                   help="Selecione o vencimento para análise do skew")
+    
+    if skew_asset:
+        with st.spinner(f"Buscando opções de {skew_asset} para análise de Skew..."):
+            try:
+                import yfinance as yf
+                
+                # Busca preço do ativo
+                full_ticker = skew_asset if skew_asset.endswith(".SA") else f"{skew_asset}.SA"
+                stock = yf.Ticker(full_ticker)
+                hist = stock.history(period="5d")
+                
+                asset_price = 0.0
+                if not hist.empty:
+                    if isinstance(hist.columns, pd.MultiIndex):
+                        hist.columns = hist.columns.get_level_values(0)
+                    if 'Close' in hist.columns:
+                        hist = hist.dropna(subset=['Close'])
+                        if len(hist) >= 1:
+                            asset_price = float(hist['Close'].iloc[-1])
+                
+                selic = get_selic_annual()
+                
+                if asset_price > 0:
+                    # Calcula data de vencimento
+                    current_date = date.today()
+                    future_date = current_date + relativedelta(months=skew_months)
+                    expiry = get_third_friday(future_date.year, future_date.month)
+                    days_to_exp = (expiry - current_date).days
+                    
+                    if days_to_exp > 0:
+                        # Calcula Skew
+                        df_skew = calcular_volatility_skew(skew_asset, asset_price, selic, expiry)
+                        
+                        if not df_skew.empty and len(df_skew) >= 3:
+                            col_skew_chart, col_skew_info = st.columns([3, 1])
+                            
+                            with col_skew_chart:
+                                st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True)
+                            
+                            with col_skew_info:
+                                st.metric("Preço Atual", f"R$ {asset_price:.2f}")
+                                st.metric("Vencimento", expiry.strftime('%d/%m/%Y'))
+                                st.metric("Dias até Venc.", f"{days_to_exp} dias")
+                                
+                                # Calcula Skew Ratio
+                                atm_iv = df_skew[df_skew['moneyness'].abs() < 1]['iv'].values
+                                otm_5_iv = df_skew[df_skew['moneyness'].between(-6, -4)]['iv'].values
+                                
+                                if len(atm_iv) > 0 and len(otm_5_iv) > 0:
+                                    skew_ratio = otm_5_iv[0] / atm_iv[0]
+                                    
+                                    if skew_ratio >= 1.20:
+                                        st.error(f"**Skew Ratio**: {skew_ratio:.2f}")
+                                        st.caption("⚠️ Proteção muito cara")
+                                    elif skew_ratio >= 1.10:
+                                        st.warning(f"**Skew Ratio**: {skew_ratio:.2f}")
+                                        st.caption("📊 Demanda moderada por proteção")
+                                    elif skew_ratio >= 1.00:
+                                        st.success(f"**Skew Ratio**: {skew_ratio:.2f}")
+                                        st.caption("✅ Skew normal")
+                                    else:
+                                        st.info(f"**Skew Ratio**: {skew_ratio:.2f}")
+                                        st.caption("🔵 Proteção relativamente barata")
+                            
+                            # Tabela com detalhes
+                            with st.expander("📋 Detalhes por Strike"):
+                                df_display = df_skew[['strike', 'moneyness', 'iv', 'option_ticker', 'option_price']].copy()
+                                df_display.columns = ['Strike', 'Moneyness (%)', 'IV (%)', 'Ticker Opção', 'Prêmio (R$)']
+                                df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}")
+                                df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
+                                df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
+                                df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
+                                st.dataframe(df_display, hide_index=True, use_container_width=True)
+                        else:
+                            st.warning(f"Poucos dados disponíveis para {skew_asset}. Tente outro ativo com mais liquidez nas opções.")
+                    else:
+                        st.error(f"Vencimento inválido (já passou)")
+                else:
+                    st.error(f"Não foi possível obter o preço de {skew_asset}")
+            except Exception as e:
+                st.error(f"Erro ao calcular Volatility Skew: {e}")
 
     st.markdown("---")
 
