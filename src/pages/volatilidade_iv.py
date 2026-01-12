@@ -301,8 +301,22 @@ def render():
     if term_asset:
         with st.spinner(f"Buscando opções ATM de {term_asset} na B3..."):
             try:
-                # Busca preço do ativo
-                asset_price = get_asset_price_yesterday(term_asset)
+                import yfinance as yf
+                
+                # Busca preço do ativo diretamente
+                full_ticker = term_asset if term_asset.endswith(".SA") else f"{term_asset}.SA"
+                stock = yf.Ticker(full_ticker)
+                hist = stock.history(period="5d")
+                
+                asset_price = 0.0
+                if not hist.empty:
+                    if isinstance(hist.columns, pd.MultiIndex):
+                        hist.columns = hist.columns.get_level_values(0)
+                    if 'Close' in hist.columns:
+                        hist = hist.dropna(subset=['Close'])
+                        if len(hist) >= 1:
+                            asset_price = float(hist['Close'].iloc[-1])
+                
                 selic = get_selic_annual()
                 
                 if asset_price > 0:
