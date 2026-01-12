@@ -267,17 +267,17 @@ def render():
             'VIXCLS': 'VIX'
         })
 
-    if df_fred.empty or 'VXEWZ' not in df_fred.columns:
+    if df_fred.empty or 'VXEWZCLS' not in df_fred.columns:
         st.error("Erro ao carregar dados do FRED.")
         return
 
     # Processamento dos dados
     df_fred = df_fred.dropna()
-    vxewz_series = df_fred['VXEWZ']
+    vxewz_series = df_fred['VXEWZCLS']
     
     # Cálculo Spread
-    if 'VIX' in df_fred.columns:
-        df_fred['Spread'] = df_fred['VXEWZ'] - df_fred['VIX']
+    if 'VIXCLS' in df_fred.columns:
+        df_fred['Spread'] = df_fred['VXEWZCLS'] - df_fred['VIXCLS']
     
     # Dados recentes
     cutoff_5y = vxewz_series.index.max() - pd.DateOffset(years=5)
