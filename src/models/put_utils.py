@@ -98,18 +98,3 @@ def generate_put_ticker(asset_code, expiry_date, strike):
         strike_val = int(strike)
         
     return f"{asset_code}{month_letter}{strike_val}"
-
-def get_call_ticker_letter(month):
-    """Returns the B3 Call option letter for a given month (A-L)."""
-    return chr(64 + month)
-
-def generate_call_ticker(asset_code, expiry_date, strike):
-    """Generates the theoretical B3 ticker for a CALL option."""
-    month_letter = get_call_ticker_letter(expiry_date.month)
-    
-    if strike < 100:
-        strike_val = int(strike * 10)
-    else:
-        strike_val = int(strike)
-        
-    return f"{asset_code}{month_letter}{strike_val}"
