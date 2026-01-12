@@ -361,3 +361,229 @@ def gerar_grafico_ifr_breadth(df_amplitude):
         fig.update_xaxes(range=[start_date, end_date])
         
     return fig
+
+def gerar_grafico_iv_bandas(series_iv, titulo="VXEWZ com Bandas de Bollinger", periodo_bb=20, desvios=2):
+    """Gera gráfico de IV com Bandas de Bollinger."""
+    df = series_iv.to_frame(name='IV').dropna()
+    if df.empty:
+        return go.Figure().update_layout(title_text=titulo, template='brokeberg')
+    
+    # Calcular Bandas de Bollinger
+    df['MM'] = df['IV'].rolling(window=periodo_bb).mean()
+    df['STD'] = df['IV'].rolling(window=periodo_bb).std()
+    df['Upper'] = df['MM'] + (df['STD'] * desvios)
+    df['Lower'] = df['MM'] - (df['STD'] * desvios)
+    
+    fig = go.Figure()
+    
+    # Área entre as bandas
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Upper'], name='Banda Superior',
+        line=dict(color='rgba(128, 128, 128, 0.3)', width=1),
+        showlegend=False
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Lower'], name='Banda Inferior',
+        line=dict(color='rgba(128, 128, 128, 0.3)', width=1),
+        fill='tonexty', fillcolor='rgba(100, 100, 100, 0.15)',
+        showlegend=False
+    ))
+    
+    # Média móvel
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['MM'], name=f'MM{periodo_bb}',
+        line=dict(color='#FFA726', width=1.5, dash='dash')
+    ))
+    
+    # IV principal
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['IV'], name='VXEWZ',
+        line=dict(color='#29B6F6', width=2)
+    ))
+    
+    fig.update_layout(
+        title_text=titulo, title_x=0, template='brokeberg',
+        yaxis_title="Volatilidade Implícita", xaxis_title="Data",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=6, label="6M", step="month", stepmode="backward"),
+                    dict(count=1, label="1A", step="year", stepmode="backward"),
+                    dict(count=2, label="2A", step="year", stepmode="backward"),
+                    dict(count=5, label="5A", step="year", stepmode="backward"),
+                    dict(step="all", label="Tudo")
+                ]),
+                bgcolor="#333952", font=dict(color="white")
+            ),
+            type="date"
+        ),
+        yaxis=dict(autorange=True, fixedrange=False)
+    )
+    
+    if not df.empty:
+        end_date = df.index.max()
+        start_date = end_date - pd.DateOffset(years=2)
+        fig.update_xaxes(range=[start_date, end_date])
+    
+    return fig
+
+def gerar_grafico_regime_volatilidade(series_iv, titulo="Regime de Volatilidade"):
+    """Gera gráfico de regime de volatilidade (Contango vs Backwardation)."""
+    df = series_iv.to_frame(name='IV').dropna()
+    if df.empty:
+        return go.Figure().update_layout(title_text=titulo, template='brokeberg')
+    
+    # Calcular médias móveis
+    df['MM21'] = df['IV'].rolling(window=21).mean()
+    df['MM63'] = df['IV'].rolling(window=63).mean()
+    df['Spread'] = df['MM21'] - df['MM63']
+    
+    fig = go.Figure()
+    
+    # Áreas de regime
+    spread = df['Spread'].dropna()
+    pos = spread.where(spread >= 0, 0)
+    neg = spread.where(spread < 0, 0)
+    
+    fig.add_trace(go.Scatter(
+        x=spread.index, y=pos, name='Backwardation (Stress)',
+        line=dict(color='#EF5350', width=1),
+        fill='tozeroy', fillcolor='rgba(239, 83, 80, 0.4)'
+    ))
+    fig.add_trace(go.Scatter(
+        x=spread.index, y=neg, name='Contango (Normal)',
+        line=dict(color='#66BB6A', width=1),
+        fill='tozeroy', fillcolor='rgba(102, 187, 106, 0.4)'
+    ))
+    
+    fig.add_hline(y=0, line_dash="solid", line_color="white", line_width=1)
+    
+    fig.update_layout(
+        title_text=titulo, title_x=0, template='brokeberg',
+        yaxis_title="Spread (MM21 - MM63)", xaxis_title="Data",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=6, label="6M", step="month", stepmode="backward"),
+                    dict(count=1, label="1A", step="year", stepmode="backward"),
+                    dict(count=2, label="2A", step="year", stepmode="backward"),
+                    dict(count=5, label="5A", step="year", stepmode="backward"),
+                    dict(step="all", label="Tudo")
+                ]),
+                bgcolor="#333952", font=dict(color="white")
+            ),
+            type="date"
+        ),
+        yaxis=dict(autorange=True, fixedrange=False)
+    )
+    
+    if not df.empty:
+        end_date = df.index.max()
+        start_date = end_date - pd.DateOffset(years=2)
+        fig.update_xaxes(range=[start_date, end_date])
+    
+    return fig
+
+def gerar_grafico_roc_volatilidade(series_iv, titulo="Taxa de Variação da Volatilidade"):
+    """Gera gráfico de ROC (Rate of Change) da volatilidade."""
+    df = series_iv.to_frame(name='IV').dropna()
+    if df.empty:
+        return go.Figure().update_layout(title_text=titulo, template='brokeberg')
+    
+    # Calcular ROC
+    df['ROC_5'] = df['IV'].pct_change(periods=5) * 100
+    df['ROC_21'] = df['IV'].pct_change(periods=21) * 100
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['ROC_5'], name='ROC 5d',
+        line=dict(color='#29B6F6', width=1.5)
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['ROC_21'], name='ROC 21d',
+        line=dict(color='#FFA726', width=1.5)
+    ))
+    
+    fig.add_hline(y=0, line_dash="solid", line_color="white", line_width=0.5)
+    fig.add_hline(y=50, line_dash="dash", line_color="red", line_width=1, 
+                  annotation_text="Spike +50%", annotation_position="right")
+    fig.add_hline(y=-30, line_dash="dash", line_color="green", line_width=1,
+                  annotation_text="Queda -30%", annotation_position="right")
+    
+    fig.update_layout(
+        title_text=titulo, title_x=0, template='brokeberg',
+        yaxis_title="Variação %", xaxis_title="Data",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=6, label="6M", step="month", stepmode="backward"),
+                    dict(count=1, label="1A", step="year", stepmode="backward"),
+                    dict(count=2, label="2A", step="year", stepmode="backward"),
+                    dict(count=5, label="5A", step="year", stepmode="backward"),
+                    dict(step="all", label="Tudo")
+                ]),
+                bgcolor="#333952", font=dict(color="white")
+            ),
+            type="date"
+        ),
+        yaxis=dict(autorange=True, fixedrange=False)
+    )
+    
+    if not df.empty:
+        end_date = df.index.max()
+        start_date = end_date - pd.DateOffset(years=2)
+        fig.update_xaxes(range=[start_date, end_date])
+    
+    return fig
+
+def gerar_grafico_iv_rank(series_iv_rank, titulo="IV Rank (252 dias)"):
+    """Gera gráfico do IV Rank ao longo do tempo."""
+    df = series_iv_rank.to_frame(name='IV_Rank').dropna()
+    if df.empty:
+        return go.Figure().update_layout(title_text=titulo, template='brokeberg')
+    
+    fig = go.Figure()
+    
+    # Área de IV Rank
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['IV_Rank'], name='IV Rank',
+        line=dict(color='#AB47BC', width=2),
+        fill='tozeroy', fillcolor='rgba(171, 71, 188, 0.2)'
+    ))
+    
+    # Linhas de referência
+    fig.add_hline(y=80, line_dash="dash", line_color="#EF5350", line_width=1,
+                  annotation_text="Alto (80)", annotation_position="right")
+    fig.add_hline(y=50, line_dash="dot", line_color="gray", line_width=1)
+    fig.add_hline(y=20, line_dash="dash", line_color="#66BB6A", line_width=1,
+                  annotation_text="Baixo (20)", annotation_position="right")
+    
+    fig.update_layout(
+        title_text=titulo, title_x=0, template='brokeberg',
+        yaxis_title="IV Rank %", xaxis_title="Data",
+        yaxis=dict(range=[0, 100], autorange=False),
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=6, label="6M", step="month", stepmode="backward"),
+                    dict(count=1, label="1A", step="year", stepmode="backward"),
+                    dict(count=2, label="2A", step="year", stepmode="backward"),
+                    dict(count=5, label="5A", step="year", stepmode="backward"),
+                    dict(step="all", label="Tudo")
+                ]),
+                bgcolor="#333952", font=dict(color="white")
+            ),
+            type="date"
+        )
+    )
+    
+    if not df.empty:
+        end_date = df.index.max()
+        start_date = end_date - pd.DateOffset(years=2)
+        fig.update_xaxes(range=[start_date, end_date])
+    
+    return fig

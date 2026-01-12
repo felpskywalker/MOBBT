@@ -22,7 +22,8 @@ from src.pages import (
     radar_insiders,
     calculadora_put,
     screener_put,
-    exportador_dfp
+    exportador_dfp,
+    volatilidade_iv
 )
 
 # --- Sidebar Nuvegação ---
@@ -36,7 +37,8 @@ with st.sidebar:
             "Início",
             "Juros Brasil",
             "Crédito Privado",
-            "Amplitude", 
+            "Amplitude",
+            "Volatilidade IV",
             "Econômicos BR",
             "Commodities",
             "Internacional",
@@ -50,7 +52,8 @@ with st.sidebar:
             "house",
             "graph-up-arrow",
             "wallet2",
-            "water", 
+            "water",
+            "activity",
             "bar-chart-line-fill",
             "box-seam",
             "globe-americas",
@@ -98,6 +101,9 @@ elif pagina_selecionada == "Crédito Privado":
 
 elif pagina_selecionada == "Amplitude":
     market_breadth.render()
+
+elif pagina_selecionada == "Volatilidade IV":
+    volatilidade_iv.render()
 
 elif pagina_selecionada == "Econômicos BR":
     economicos_br.render()
