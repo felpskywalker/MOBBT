@@ -15,20 +15,24 @@ from datetime import datetime
 ROOT_DIR = Path(__file__).parent.parent.parent
 DFP_PATH = ROOT_DIR / "DFP.py"
 
-if not DFP_PATH.exists():
-    raise FileNotFoundError(f"Módulo DFP não encontrado em: {DFP_PATH}")
+DFP_DISPONIVEL = False
 
-spec = importlib.util.spec_from_file_location("DFP", DFP_PATH)
-DFP = importlib.util.module_from_spec(spec)
-sys.modules["DFP"] = DFP
-spec.loader.exec_module(DFP)
-
-# Importa funções do módulo DFP
-carregar_cadastro_com_cache = DFP.carregar_cadastro_com_cache
-baixar_e_processar_em_paralelo = DFP.baixar_e_processar_em_paralelo
-formatar_demonstrativo = DFP.formatar_demonstrativo
-combinar_dados = DFP.combinar_dados
-URL_BASE_CVM = DFP.URL_BASE_CVM
+if DFP_PATH.exists():
+    try:
+        spec = importlib.util.spec_from_file_location("DFP", DFP_PATH)
+        DFP = importlib.util.module_from_spec(spec)
+        sys.modules["DFP"] = DFP
+        spec.loader.exec_module(DFP)
+        
+        # Importa funções do módulo DFP
+        carregar_cadastro_com_cache = DFP.carregar_cadastro_com_cache
+        baixar_e_processar_em_paralelo = DFP.baixar_e_processar_em_paralelo
+        formatar_demonstrativo = DFP.formatar_demonstrativo
+        combinar_dados = DFP.combinar_dados
+        URL_BASE_CVM = DFP.URL_BASE_CVM
+        DFP_DISPONIVEL = True
+    except Exception as e:
+        DFP_DISPONIVEL = False
 
 
 def render():
@@ -37,6 +41,12 @@ def render():
     st.header("📊 Exportador de DFPs")
     st.markdown("Exporte demonstrativos financeiros (DRE, Balanço, DFC) de empresas listadas na CVM.")
     st.markdown("---")
+    
+    # Verifica se o módulo DFP está disponível
+    if not DFP_DISPONIVEL:
+        st.error("⚠️ Módulo DFP não disponível. O arquivo `DFP.py` não foi encontrado no repositório.")
+        st.info("Para usar esta funcionalidade, adicione o arquivo `DFP.py` à raiz do projeto.")
+        return
     
     # --- Carregamento do Cadastro de Empresas ---
     @st.cache_data(ttl=3600*24, show_spinner=False)
