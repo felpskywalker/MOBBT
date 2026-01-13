@@ -13,7 +13,7 @@ from datetime import datetime
 
 # Carrega o módulo DFP dinamicamente (funciona tanto local quanto no Streamlit Cloud)
 ROOT_DIR = Path(__file__).parent.parent.parent
-DFP_PATH = ROOT_DIR / "DFP.py"
+DFP_PATH = ROOT_DIR / "src" / "data_loaders" / "DFP.py"
 
 DFP_DISPONIVEL = False
 
@@ -44,8 +44,8 @@ def render():
     
     # Verifica se o módulo DFP está disponível
     if not DFP_DISPONIVEL:
-        st.error("⚠️ Módulo DFP não disponível. O arquivo `DFP.py` não foi encontrado no repositório.")
-        st.info("Para usar esta funcionalidade, adicione o arquivo `DFP.py` à raiz do projeto.")
+        st.error("⚠️ Módulo DFP não disponível. O arquivo `DFP.py` não foi encontrado.")
+        st.info("Para usar esta funcionalidade, verifique se o arquivo `src/data_loaders/DFP.py` existe.")
         return
     
     # --- Carregamento do Cadastro de Empresas ---
