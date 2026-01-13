@@ -134,17 +134,23 @@ def render():
     
     with c_op2:
         actual_ticker = generate_put_ticker(asset_ticker[:4], expiry, selected_strike) if selected_strike > 0 else ""
+        
+        # Variáveis para ticker ajustado
+        ticker_ajustado = ""
+        usando_ticker_ajustado = False
+        
         st.text_input("Código da Opção (Teórico)", value=actual_ticker, disabled=True)
 
     if actual_ticker and st.session_state.get('last_option_ticker') != actual_ticker:
         with st.spinner(f"Buscando {actual_ticker} na B3..."):
             b3_data = fetch_option_price_b3(actual_ticker)
             
-            # CENÁRIO 1: API encontrou dados válidos
+            # CENÁRIO 1: API encontrou dados válidos com ticker original
             if b3_data and b3_data.get('last_price', 0) > 0:
                 st.session_state['b3_fetched_price'] = b3_data['last_price']
                 st.session_state['b3_data'] = b3_data
                 st.session_state['usando_fallback'] = False
+                st.session_state['ticker_ajustado'] = ""
                 st.session_state['strike_ajuste_proventos'] = 0.0
                 
                 # Verifica dividendos recentes (informativo apenas)
@@ -160,42 +166,67 @@ def render():
                     else:
                         st.session_state['proventos_recentes'] = 0.0
             
-            # CENÁRIO 2: API não encontrou -> FALLBACK com dividendos
+            # CENÁRIO 2: API não encontrou -> TENTAR TICKER AJUSTADO POR DIVIDENDOS
             else:
                 st.session_state['b3_fetched_price'] = 0.0
                 st.session_state['b3_data'] = None
                 st.session_state['usando_fallback'] = True
                 
-                # Tenta estimar strike ajustado por proventos
-                strike_original = extrair_strike_do_ticker(actual_ticker)
-                
-                if strike_original > 0 and asset_ticker:
+                # Buscar proventos e calcular ticker ajustado
+                if asset_ticker and selected_strike > 0:
                     df_prov = buscar_proventos_detalhados(asset_ticker)
-                    desconto = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
-                    st.session_state['strike_ajuste_proventos'] = desconto
-                    st.session_state['strike_original_extraido'] = strike_original
+                    ajuste_dividendos = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
+                    
+                    if ajuste_dividendos > 0:
+                        # ADICIONA dividendos ao strike para gerar código ajustado
+                        strike_ajustado = selected_strike + ajuste_dividendos
+                        ticker_ajustado = generate_put_ticker(asset_ticker[:4], expiry, strike_ajustado)
+                        
+                        # Tenta buscar o ticker ajustado
+                        b3_data_ajustado = fetch_option_price_b3(ticker_ajustado)
+                        
+                        if b3_data_ajustado and b3_data_ajustado.get('last_price', 0) > 0:
+                            # SUCESSO! Encontrou o ticker ajustado
+                            st.session_state['b3_fetched_price'] = b3_data_ajustado['last_price']
+                            st.session_state['b3_data'] = b3_data_ajustado
+                            st.session_state['usando_fallback'] = True  # Ainda é fallback, mas funcionou
+                            st.session_state['ticker_ajustado'] = ticker_ajustado
+                            st.session_state['strike_ajuste_proventos'] = ajuste_dividendos
+                        else:
+                            # Ticker ajustado também não encontrado
+                            st.session_state['ticker_ajustado'] = ticker_ajustado
+                            st.session_state['strike_ajuste_proventos'] = ajuste_dividendos
+                    else:
+                        st.session_state['ticker_ajustado'] = ""
+                        st.session_state['strike_ajuste_proventos'] = 0.0
                 else:
+                    st.session_state['ticker_ajustado'] = ""
                     st.session_state['strike_ajuste_proventos'] = 0.0
-                    st.session_state['strike_original_extraido'] = 0.0
                     
             st.session_state['last_option_ticker'] = actual_ticker
 
     with c_op3:
         b3_price = st.session_state.get('b3_fetched_price', 0.0)
         usando_fallback = st.session_state.get('usando_fallback', False)
+        ticker_ajustado_encontrado = st.session_state.get('ticker_ajustado', "")
+        ajuste = st.session_state.get('strike_ajuste_proventos', 0.0)
         
         if b3_price > 0:
-            st.metric("Prêmio B3 (Último)", f"R$ {b3_price:.2f}")
-            # Info de proventos recentes (não altera valor, apenas aviso)
-            proventos_recentes = st.session_state.get('proventos_recentes', 0.0)
-            if proventos_recentes > 0:
-                st.info(f"ℹ️ Proventos recentes: R$ {proventos_recentes:.2f} (strike pode estar ajustado)")
+            if usando_fallback and ticker_ajustado_encontrado:
+                # Encontrou via ticker ajustado
+                st.success(f"✅ Encontrado via ticker ajustado: **{ticker_ajustado_encontrado}**")
+                st.metric("Prêmio B3 (Último)", f"R$ {b3_price:.2f}")
+                st.caption(f"💡 Strike {selected_strike:.2f} + Dividendos {ajuste:.2f} = Código {ticker_ajustado_encontrado}")
+            else:
+                st.metric("Prêmio B3 (Último)", f"R$ {b3_price:.2f}")
+                # Info de proventos recentes (não altera valor, apenas aviso)
+                proventos_recentes = st.session_state.get('proventos_recentes', 0.0)
+                if proventos_recentes > 0:
+                    st.info(f"ℹ️ Proventos recentes: R$ {proventos_recentes:.2f} (strike pode estar ajustado)")
         elif usando_fallback:
-            # Modo fallback ativo
-            ajuste = st.session_state.get('strike_ajuste_proventos', 0.0)
-            strike_orig = st.session_state.get('strike_original_extraido', 0.0)
-            if ajuste > 0:
-                st.warning(f"⚠️ Opção não encontrada na B3. Strike teórico estimado: R$ {strike_orig:.2f} → R$ {strike_orig - ajuste:.2f} (ajuste por proventos: R$ {ajuste:.2f})")
+            # Modo fallback ativo mas não encontrou nenhum ticker
+            if ajuste > 0 and ticker_ajustado_encontrado:
+                st.warning(f"⚠️ Ticker original não encontrado. Tentei **{ticker_ajustado_encontrado}** (ajuste R$ {ajuste:.2f}) mas também não foi encontrado.")
             else:
                 st.warning("⚠️ Opção não encontrada na B3. Insira o prêmio manualmente.")
         else:
