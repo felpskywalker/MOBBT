@@ -153,9 +153,24 @@ def render():
     id_map = {item["symbol"]: item["id"] for item in watchlist}
     df["id"] = df["Ticker"].map(id_map)
     
-    # Exibir tabela ordenável
+    # Função para aplicar cores na coluna de variação
+    def color_variation(val):
+        if pd.isna(val) or val is None:
+            return ''
+        elif val > 0:
+            return 'color: #00E676; font-weight: bold'  # Verde
+        elif val < 0:
+            return 'color: #FF5252; font-weight: bold'  # Vermelho
+        else:
+            return 'color: #888888'  # Cinza para 0%
+    
+    # Aplicar estilo ao DataFrame
+    df_display = df[["Ticker", "Preço Atual (R$)", "Variação (%)"]].copy()
+    styled_df = df_display.style.applymap(color_variation, subset=["Variação (%)"])
+    
+    # Exibir tabela ordenável com cores
     st.dataframe(
-        df[["Ticker", "Preço Atual (R$)", "Variação (%)"]],
+        styled_df,
         column_config={
             "Ticker": st.column_config.TextColumn("Ticker", width="medium"),
             "Preço Atual (R$)": st.column_config.NumberColumn(
@@ -171,14 +186,12 @@ def render():
         },
         hide_index=True,
         use_container_width=True,
-        height=min(400, 35 * len(df) + 38)  # Altura dinâmica baseada no número de linhas
+        height=min(600, 35 * len(df) + 38)  # Altura maior para acomodar mais ativos
     )
     
     st.caption(f"📈 Total de ativos: {len(watchlist)} | Dados com ~15 min de atraso")
     
-    st.markdown("---")
-    
-    # Seção de remoção de ativos (APÓS a tabela completa)
+    # Seção de remoção de ativos (sem linha horizontal)
     with st.expander("🗑️ Remover Ativo"):
         col_del1, col_del2 = st.columns([3, 1])
         with col_del1:
@@ -198,4 +211,3 @@ def render():
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro: {e}")
-
