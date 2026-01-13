@@ -17,6 +17,7 @@ from src.models.put_utils import (
     get_asset_price_yesterday
 )
 from src.data_loaders.b3_api import fetch_option_price_b3
+from src.data_loaders.proventos import buscar_proventos_detalhados, calcular_soma_proventos
 from src.models.black_scholes import implied_volatility, calculate_greeks
 from src.models.fractal_analytics import (
     calculate_hurst_exponent, get_hurst_interpretation,
@@ -44,6 +45,41 @@ def get_atm_strike(spot_price: float) -> float:
         return round(spot_price / 2) * 2  # Arredonda para 2.00
 
 
+def buscar_opcao_com_fallback(ticker: str, asset_code: str, expiry: date, strike: float) -> tuple:
+    """
+    Busca opção com fallback de dividendos e busca por strikes próximos.
+    
+    Returns:
+        tuple: (b3_data, option_ticker, foi_fallback)
+    """
+    # Tenta ticker original
+    option_ticker = generate_put_ticker(asset_code, expiry, strike)
+    b3_data = fetch_option_price_b3(option_ticker)
+    
+    if b3_data and b3_data.get('last_price', 0) > 0:
+        return b3_data, option_ticker, False
+    
+    # Fallback: buscar proventos e ajustar código
+    df_prov = buscar_proventos_detalhados(ticker)
+    ajuste_dividendos = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
+    
+    if ajuste_dividendos > 0:
+        strike_ajustado_base = strike + ajuste_dividendos
+        
+        # Busca por proximidade: ±0.5 ao redor do calculado
+        offsets = [0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4, 0.5, -0.5]
+        
+        for offset in offsets:
+            strike_tentativa = strike_ajustado_base + offset
+            ticker_tentativa = generate_put_ticker(asset_code, expiry, strike_tentativa)
+            b3_data_tent = fetch_option_price_b3(ticker_tentativa)
+            
+            if b3_data_tent and b3_data_tent.get('last_price', 0) > 0:
+                return b3_data_tent, ticker_tentativa, True
+    
+    return None, option_ticker, False
+
+
 def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> dict:
     """
     Escaneia um ticker individual e retorna métricas.
@@ -60,12 +96,10 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> dict:
         # 2. Determina strike ATM
         strike = get_atm_strike(spot)
         
-        # 3. Gera ticker da opção
+        # 3. Busca opção com fallback
         asset_code = ticker[:4]
-        option_ticker = generate_put_ticker(asset_code, expiry, strike)
+        b3_data, option_ticker, foi_fallback = buscar_opcao_com_fallback(ticker, asset_code, expiry, strike)
         
-        # 4. Busca preço da opção na B3
-        b3_data = fetch_option_price_b3(option_ticker)
         if not b3_data or b3_data['last_price'] <= 0:
             return None
         
