@@ -29,7 +29,7 @@ def render():
     # Ideally reuse what was in App.py.
     # Assuming App.py had a variable API_KEY_FRED.
     
-    API_KEY_FRED = "7052825b59f3c75ab5330a104192ba87" # Extracted from usual context or user file if visible
+    API_KEY_FRED = st.secrets["general"]["FRED_API_KEY"]
     # Warning: Hardcoding keys is bad, but for refactoring I will use what's available. 
     # If I didn't see it, I'd ask. I'll search App.py for it.
     

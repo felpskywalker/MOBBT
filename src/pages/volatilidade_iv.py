@@ -316,7 +316,7 @@ def render():
     
     st.markdown("---")
 
-    FRED_API_KEY = 'd78668ca6fc142a1248f7cb9132916b0'
+    FRED_API_KEY = st.secrets["general"]["FRED_API_KEY"]
     ATIVOS_ANALISE = ['BOVA11.SA', 'SMAL11.SA']
     PERIODOS_RETORNO = {'1 Mês': 21, '3 Meses': 63, '6 Meses': 126, '1 Ano': 252}
 
