@@ -7,22 +7,28 @@ import streamlit as st
 import pandas as pd
 import io
 import sys
+import importlib.util
 from pathlib import Path
 from datetime import datetime
 
-# Adiciona o diretório raiz ao path para importar DFP
+# Carrega o módulo DFP dinamicamente (funciona tanto local quanto no Streamlit Cloud)
 ROOT_DIR = Path(__file__).parent.parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+DFP_PATH = ROOT_DIR / "DFP.py"
+
+if not DFP_PATH.exists():
+    raise FileNotFoundError(f"Módulo DFP não encontrado em: {DFP_PATH}")
+
+spec = importlib.util.spec_from_file_location("DFP", DFP_PATH)
+DFP = importlib.util.module_from_spec(spec)
+sys.modules["DFP"] = DFP
+spec.loader.exec_module(DFP)
 
 # Importa funções do módulo DFP
-from DFP import (
-    carregar_cadastro_com_cache,
-    baixar_e_processar_em_paralelo,
-    formatar_demonstrativo,
-    combinar_dados,
-    URL_BASE_CVM
-)
+carregar_cadastro_com_cache = DFP.carregar_cadastro_com_cache
+baixar_e_processar_em_paralelo = DFP.baixar_e_processar_em_paralelo
+formatar_demonstrativo = DFP.formatar_demonstrativo
+combinar_dados = DFP.combinar_dados
+URL_BASE_CVM = DFP.URL_BASE_CVM
 
 
 def render():
