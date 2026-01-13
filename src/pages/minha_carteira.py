@@ -35,24 +35,27 @@ def get_stock_data_batch(symbols: list) -> pd.DataFrame:
         
         results = []
         
-        # Se só tem 1 ticker, a estrutura é diferente
         if len(tickers_sa) == 1:
             ticker = symbols[0]
             if len(df) >= 2:
                 current_price = df['Close'].iloc[-1]
                 prev_close = df['Close'].iloc[-2]
                 change_pct = ((current_price - prev_close) / prev_close) * 100
+                volume = df['Volume'].iloc[-1] if 'Volume' in df.columns else None
             elif len(df) == 1:
                 current_price = df['Close'].iloc[-1]
                 change_pct = 0.0
+                volume = df['Volume'].iloc[-1] if 'Volume' in df.columns else None
             else:
                 current_price = None
                 change_pct = None
+                volume = None
             
             results.append({
                 "Ticker": ticker,
                 "Preço Atual (R$)": float(current_price) if current_price else None,
-                "Variação (%)": float(change_pct) if change_pct else None
+                "Variação (%)": float(change_pct) if change_pct else None,
+                "Volume": int(volume) if volume and pd.notna(volume) else None
             })
         else:
             # Múltiplos tickers - estrutura MultiIndex
@@ -61,40 +64,48 @@ def get_stock_data_batch(symbols: list) -> pd.DataFrame:
                 try:
                     if ticker_sa in df['Close'].columns:
                         prices = df['Close'][ticker_sa].dropna()
+                        volumes = df['Volume'][ticker_sa] if 'Volume' in df.columns and ticker_sa in df['Volume'].columns else None
+                        
                         if len(prices) >= 2:
                             current_price = prices.iloc[-1]
                             prev_close = prices.iloc[-2]
                             change_pct = ((current_price - prev_close) / prev_close) * 100
+                            volume = volumes.iloc[-1] if volumes is not None and len(volumes) > 0 else None
                         elif len(prices) == 1:
                             current_price = prices.iloc[-1]
                             change_pct = 0.0
+                            volume = volumes.iloc[-1] if volumes is not None and len(volumes) > 0 else None
                         else:
                             current_price = None
                             change_pct = None
+                            volume = None
                         
                         results.append({
                             "Ticker": symbol,
                             "Preço Atual (R$)": float(current_price) if current_price else None,
-                            "Variação (%)": float(change_pct) if change_pct else None
+                            "Variação (%)": float(change_pct) if change_pct else None,
+                            "Volume": int(volume) if volume and pd.notna(volume) else None
                         })
                     else:
                         results.append({
                             "Ticker": symbol,
                             "Preço Atual (R$)": None,
-                            "Variação (%)": None
+                            "Variação (%)": None,
+                            "Volume": None
                         })
                 except Exception:
                     results.append({
                         "Ticker": symbol,
                         "Preço Atual (R$)": None,
-                        "Variação (%)": None
+                        "Variação (%)": None,
+                        "Volume": None
                     })
         
         return pd.DataFrame(results)
     
     except Exception as e:
         st.warning(f"Erro ao buscar cotações: {e}")
-        return pd.DataFrame([{"Ticker": s, "Preço Atual (R$)": None, "Variação (%)": None} for s in symbols])
+        return pd.DataFrame([{"Ticker": s, "Preço Atual (R$)": None, "Variação (%)": None, "Volume": None} for s in symbols])
 
 
 def render():
