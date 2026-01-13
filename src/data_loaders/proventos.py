@@ -39,8 +39,8 @@ def buscar_proventos_detalhados(ticker: str) -> pd.DataFrame:
         response.raise_for_status()
         response.encoding = 'latin-1'
         
-        # Parse HTML tables
-        tables = pd.read_html(StringIO(response.text), decimal=',', thousands='.')
+        # Parse HTML tables - NÃO usar decimal/thousands aqui, fazer parsing manual
+        tables = pd.read_html(StringIO(response.text))
         
         if not tables:
             return pd.DataFrame(columns=['Data', 'Tipo', 'Valor', 'Valor_Liquido'])
@@ -89,13 +89,24 @@ def buscar_proventos_detalhados(ticker: str) -> pd.DataFrame:
                 if pd.isna(data):
                     continue
                 
-                # Parse valor
+                # Parse valor - formato brasileiro: "1,5695" = 1.5695
                 valor = 0.0
                 if value_col:
-                    val_str = str(row[value_col]).replace('.', '').replace(',', '.')
-                    val_str = re.sub(r'[^\d\.\-]', '', val_str)
-                    if val_str:
-                        valor = float(val_str)
+                    val_raw = row[value_col]
+                    if isinstance(val_raw, (int, float)):
+                        # pd.read_html pode ter convertido errado, verificar magnitude
+                        if val_raw > 100:  # Provavelmente erro de parsing (ex: 15695 deveria ser 1.5695)
+                            valor = val_raw / 10000.0
+                        else:
+                            valor = float(val_raw)
+                    else:
+                        # Valor como string
+                        val_str = str(val_raw).strip()
+                        # Remove pontos de milhar e troca vírgula por ponto
+                        val_str = val_str.replace('.', '').replace(',', '.')
+                        val_str = re.sub(r'[^\d.\-]', '', val_str)
+                        if val_str:
+                            valor = float(val_str)
                 
                 # Parse tipo (JCP ou Dividendo)
                 tipo = "Dividendo"
