@@ -149,7 +149,7 @@ def render():
                 
                 # Verifica dividendos recentes (informativo apenas)
                 if asset_ticker:
-                    df_prov = buscar_proventos_detalhados(asset_ticker[:4])
+                    df_prov = buscar_proventos_detalhados(asset_ticker)
                     if not df_prov.empty:
                         from datetime import timedelta
                         proventos_recentes = calcular_soma_proventos(df_prov, date.today() - timedelta(days=60))
@@ -170,7 +170,7 @@ def render():
                 strike_original = extrair_strike_do_ticker(actual_ticker)
                 
                 if strike_original > 0 and asset_ticker:
-                    df_prov = buscar_proventos_detalhados(asset_ticker[:4])
+                    df_prov = buscar_proventos_detalhados(asset_ticker)
                     desconto = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
                     st.session_state['strike_ajuste_proventos'] = desconto
                     st.session_state['strike_original_extraido'] = strike_original
