@@ -8,9 +8,11 @@ from datetime import date
 import plotly.graph_objects as go
 from src.models.put_utils import (
     get_selic_annual, get_next_expiration, generate_put_ticker,
-    get_asset_price_current, get_asset_price_yesterday
+    get_asset_price_current, get_asset_price_yesterday,
+    extrair_strike_do_ticker
 )
 from src.data_loaders.b3_api import fetch_option_price_b3
+from src.data_loaders.proventos import buscar_proventos_detalhados, calcular_soma_proventos
 from src.models.black_scholes import black_scholes_put, implied_volatility, calculate_greeks
 from src.models.fractal_analytics import (
     calculate_hurst_exponent, get_hurst_interpretation,
@@ -137,19 +139,70 @@ def render():
     if actual_ticker and st.session_state.get('last_option_ticker') != actual_ticker:
         with st.spinner(f"Buscando {actual_ticker} na B3..."):
             b3_data = fetch_option_price_b3(actual_ticker)
-            if b3_data:
+            
+            # CENÁRIO 1: API encontrou dados válidos
+            if b3_data and b3_data.get('last_price', 0) > 0:
                 st.session_state['b3_fetched_price'] = b3_data['last_price']
                 st.session_state['b3_data'] = b3_data
+                st.session_state['usando_fallback'] = False
+                st.session_state['strike_ajuste_proventos'] = 0.0
+                
+                # Verifica dividendos recentes (informativo apenas)
+                if asset_ticker:
+                    df_prov = buscar_proventos_detalhados(asset_ticker[:4])
+                    if not df_prov.empty:
+                        from datetime import timedelta
+                        proventos_recentes = calcular_soma_proventos(df_prov, date.today() - timedelta(days=60))
+                        if proventos_recentes > 0:
+                            st.session_state['proventos_recentes'] = proventos_recentes
+                        else:
+                            st.session_state['proventos_recentes'] = 0.0
+                    else:
+                        st.session_state['proventos_recentes'] = 0.0
+            
+            # CENÁRIO 2: API não encontrou -> FALLBACK com dividendos
             else:
                 st.session_state['b3_fetched_price'] = 0.0
                 st.session_state['b3_data'] = None
+                st.session_state['usando_fallback'] = True
+                
+                # Tenta estimar strike ajustado por proventos
+                strike_original = extrair_strike_do_ticker(actual_ticker)
+                
+                if strike_original > 0 and asset_ticker:
+                    df_prov = buscar_proventos_detalhados(asset_ticker[:4])
+                    desconto = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
+                    st.session_state['strike_ajuste_proventos'] = desconto
+                    st.session_state['strike_original_extraido'] = strike_original
+                else:
+                    st.session_state['strike_ajuste_proventos'] = 0.0
+                    st.session_state['strike_original_extraido'] = 0.0
+                    
             st.session_state['last_option_ticker'] = actual_ticker
 
     with c_op3:
         b3_price = st.session_state.get('b3_fetched_price', 0.0)
-        if b3_price > 0: st.metric("Prêmio B3 (Último)", f"R$ {b3_price:.2f}")
-        else: st.warning("Sem dados B3")
+        usando_fallback = st.session_state.get('usando_fallback', False)
+        
+        if b3_price > 0:
+            st.metric("Prêmio B3 (Último)", f"R$ {b3_price:.2f}")
+            # Info de proventos recentes (não altera valor, apenas aviso)
+            proventos_recentes = st.session_state.get('proventos_recentes', 0.0)
+            if proventos_recentes > 0:
+                st.info(f"ℹ️ Proventos recentes: R$ {proventos_recentes:.2f} (strike pode estar ajustado)")
+        elif usando_fallback:
+            # Modo fallback ativo
+            ajuste = st.session_state.get('strike_ajuste_proventos', 0.0)
+            strike_orig = st.session_state.get('strike_original_extraido', 0.0)
+            if ajuste > 0:
+                st.warning(f"⚠️ Opção não encontrada na B3. Strike teórico estimado: R$ {strike_orig:.2f} → R$ {strike_orig - ajuste:.2f} (ajuste por proventos: R$ {ajuste:.2f})")
+            else:
+                st.warning("⚠️ Opção não encontrada na B3. Insira o prêmio manualmente.")
+        else:
+            st.warning("Sem dados B3")
+            
         option_price = st.number_input("Prêmio Manual (opcional)", value=b3_price, step=0.01, format="%.2f", key="putcalc_premium")
+        
         if st.session_state.get('b3_data'):
             b3 = st.session_state['b3_data']
             st.caption(f"📊 {b3['date']}: {b3['trades']} negócios, Vol: {b3['volume']:,.0f}")

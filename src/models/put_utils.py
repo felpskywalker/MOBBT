@@ -98,3 +98,55 @@ def generate_put_ticker(asset_code, expiry_date, strike):
         strike_val = int(strike)
         
     return f"{asset_code}{month_letter}{strike_val}"
+
+
+def extrair_strike_do_ticker(ticker: str) -> float:
+    """
+    Extrai o strike original do nome do ticker de opção B3.
+    
+    Padrão B3: [ATIVO 4 letras][LETRA MÊS][STRIKE 3 dígitos]
+    Ex: PETRN300 -> 30.00, PETRO415 -> 41.50, VALE3M161 -> 16.10
+    
+    Regra de conversão:
+    - Se o número >= 100: divide por 10 (ex: 300 -> 30.00, 415 -> 41.50)
+    - Se o número < 100: usa como está (strikes muito baixos, raro)
+    
+    Args:
+        ticker: Código da opção (ex: PETRN300, VALEM410)
+    
+    Returns:
+        Strike extraído como float, ou 0.0 se não conseguir extrair
+    """
+    import re
+    
+    ticker = ticker.upper().strip()
+    
+    # Pattern: 4 letras + 1 letra (mês) + 1 número opcional + 3 dígitos
+    # Ex: PETR + N + 300, VALE3 + M + 161
+    match = re.search(r'[A-Z]{4}\d?[A-X](\d{2,4})$', ticker)
+    
+    if not match:
+        # Tenta padrão alternativo (ativo com número, ex: VALE3)
+        match = re.search(r'[A-Z]{4}\d[A-X](\d{2,4})$', ticker)
+    
+    if not match:
+        return 0.0
+    
+    strike_str = match.group(1)
+    
+    try:
+        strike_int = int(strike_str)
+        
+        # Lógica de conversão (inverso de generate_put_ticker)
+        if strike_int >= 100:
+            # Ex: 300 -> 30.00, 415 -> 41.50, 1610 -> 161.0
+            if strike_int >= 1000:
+                return strike_int / 10.0  # 4 dígitos: 1610 -> 161.0
+            else:
+                return strike_int / 10.0  # 3 dígitos: 300 -> 30.0
+        else:
+            # Strike muito baixo (raro), usa como está
+            return float(strike_int)
+            
+    except ValueError:
+        return 0.0
