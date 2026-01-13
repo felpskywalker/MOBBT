@@ -177,24 +177,36 @@ def render():
                     df_prov = buscar_proventos_detalhados(asset_ticker)
                     ajuste_dividendos = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
                     
+                    ticker_encontrado = None
+                    strike_encontrado = None
+                    
                     if ajuste_dividendos > 0:
                         # ADICIONA dividendos ao strike para gerar código ajustado
-                        strike_ajustado = selected_strike + ajuste_dividendos
-                        ticker_ajustado = generate_put_ticker(asset_ticker[:4], expiry, strike_ajustado)
+                        strike_ajustado_base = selected_strike + ajuste_dividendos
                         
-                        # Tenta buscar o ticker ajustado
-                        b3_data_ajustado = fetch_option_price_b3(ticker_ajustado)
+                        # Busca por proximidade: tenta ±5 strikes ao redor do calculado
+                        # Ordem: exato, +1, -1, +2, -2, +3, -3, +4, -4, +5, -5
+                        offsets = [0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4, 0.5, -0.5]
                         
-                        if b3_data_ajustado and b3_data_ajustado.get('last_price', 0) > 0:
-                            # SUCESSO! Encontrou o ticker ajustado
-                            st.session_state['b3_fetched_price'] = b3_data_ajustado['last_price']
-                            st.session_state['b3_data'] = b3_data_ajustado
-                            st.session_state['usando_fallback'] = True  # Ainda é fallback, mas funcionou
-                            st.session_state['ticker_ajustado'] = ticker_ajustado
-                            st.session_state['strike_ajuste_proventos'] = ajuste_dividendos
-                        else:
-                            # Ticker ajustado também não encontrado
-                            st.session_state['ticker_ajustado'] = ticker_ajustado
+                        for offset in offsets:
+                            strike_tentativa = strike_ajustado_base + offset
+                            ticker_tentativa = generate_put_ticker(asset_ticker[:4], expiry, strike_tentativa)
+                            
+                            b3_data_tentativa = fetch_option_price_b3(ticker_tentativa)
+                            
+                            if b3_data_tentativa and b3_data_tentativa.get('last_price', 0) > 0:
+                                # SUCESSO! Encontrou um ticker próximo
+                                ticker_encontrado = ticker_tentativa
+                                strike_encontrado = strike_tentativa
+                                st.session_state['b3_fetched_price'] = b3_data_tentativa['last_price']
+                                st.session_state['b3_data'] = b3_data_tentativa
+                                st.session_state['ticker_ajustado'] = ticker_encontrado
+                                st.session_state['strike_ajuste_proventos'] = ajuste_dividendos
+                                break
+                        
+                        # Se não encontrou nenhum
+                        if not ticker_encontrado:
+                            st.session_state['ticker_ajustado'] = generate_put_ticker(asset_ticker[:4], expiry, strike_ajustado_base)
                             st.session_state['strike_ajuste_proventos'] = ajuste_dividendos
                     else:
                         st.session_state['ticker_ajustado'] = ""
