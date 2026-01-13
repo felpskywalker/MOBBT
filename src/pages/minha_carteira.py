@@ -176,23 +176,28 @@ def render():
             return 'color: #888888'  # Cinza para 0%
     
     # Aplicar estilo ao DataFrame
-    df_display = df[["Ticker", "Preço Atual (R$)", "Variação (%)"]].copy()
+    df_display = df[["Ticker", "Preço Atual (R$)", "Variação (%)", "Volume"]].copy()
     styled_df = df_display.style.applymap(color_variation, subset=["Variação (%)"])
     
     # Exibir tabela ordenável com cores
     st.dataframe(
         styled_df,
         column_config={
-            "Ticker": st.column_config.TextColumn("Ticker", width="medium"),
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
             "Preço Atual (R$)": st.column_config.NumberColumn(
                 "Preço Atual (R$)",
                 format="R$ %.2f",
-                width="medium"
+                width="small"
             ),
             "Variação (%)": st.column_config.NumberColumn(
                 "Variação (%)",
                 format="%.2f%%",
-                width="medium"
+                width="small"
+            ),
+            "Volume": st.column_config.NumberColumn(
+                "Volume",
+                format="%d",
+                width="small"
             ),
         },
         hide_index=True,
