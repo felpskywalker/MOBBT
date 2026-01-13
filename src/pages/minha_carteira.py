@@ -8,29 +8,40 @@ import yfinance as yf
 from src.data_loaders.db import get_watchlist, add_stock, delete_stock
 
 
-def get_current_prices(symbols: list) -> dict:
+def get_stock_data(symbols: list) -> dict:
     """
-    Busca preços atuais dos ativos via yfinance.
+    Busca preços atuais e variação dos ativos via yfinance.
     
     Args:
         symbols: Lista de tickers (ex: ['WEGE3', 'PETR4'])
     
     Returns:
-        Dict com ticker -> preço atual
+        Dict com ticker -> {'price': float, 'change_pct': float}
     """
     if not symbols:
         return {}
     
-    prices = {}
+    data = {}
     for symbol in symbols:
         try:
             ticker = yf.Ticker(f"{symbol}.SA")
             info = ticker.fast_info
-            prices[symbol] = info.get("lastPrice") or info.get("regularMarketPrice")
+            current_price = info.get("lastPrice") or info.get("regularMarketPrice")
+            previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+            
+            if current_price and previous_close:
+                change_pct = ((current_price - previous_close) / previous_close) * 100
+            else:
+                change_pct = None
+            
+            data[symbol] = {
+                "price": current_price,
+                "change_pct": change_pct
+            }
         except Exception:
-            prices[symbol] = None
+            data[symbol] = {"price": None, "change_pct": None}
     
-    return prices
+    return data
 
 
 def render():
@@ -74,43 +85,43 @@ def render():
         st.info("Sua watchlist está vazia. Adicione um ativo acima para começar!")
         return
     
-    # Buscar preços atuais
+    # Buscar preços atuais e variação
     symbols = [item["symbol"] for item in watchlist]
     
     with st.spinner("Buscando cotações..."):
-        prices = get_current_prices(symbols)
-    
-    # Montar DataFrame para exibição
-    df_data = []
-    for item in watchlist:
-        symbol = item["symbol"]
-        preco_atual = prices.get(symbol)
-        
-        df_data.append({
-            "id": item["id"],
-            "Ticker": symbol,
-            "Preço Atual (R$)": f"R$ {preco_atual:.2f}" if preco_atual else "N/A",
-        })
-    
-    df = pd.DataFrame(df_data)
+        stock_data = get_stock_data(symbols)
     
     # Exibir tabela com botões de delete
-    for idx, row in df.iterrows():
-        col1, col2, col3 = st.columns([2, 3, 1])
+    for item in watchlist:
+        symbol = item["symbol"]
+        data = stock_data.get(symbol, {})
+        preco_atual = data.get("price")
+        variacao = data.get("change_pct")
+        
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
         
         with col1:
-            st.markdown(f"**{row['Ticker']}**")
+            st.markdown(f"**{symbol}**")
         
         with col2:
-            st.markdown(row["Preço Atual (R$)"])
+            st.markdown(f"R$ {preco_atual:.2f}" if preco_atual else "N/A")
         
         with col3:
-            if st.button("🗑️", key=f"delete_{row['id']}", help="Remover ativo"):
+            if variacao is not None:
+                color = "green" if variacao >= 0 else "red"
+                arrow = "▲" if variacao >= 0 else "▼"
+                st.markdown(f":{color}[{arrow} {variacao:+.2f}%]")
+            else:
+                st.markdown("N/A")
+        
+        with col4:
+            if st.button("🗑️", key=f"delete_{item['id']}", help="Remover ativo"):
                 try:
-                    delete_stock(row["id"])
+                    delete_stock(item["id"])
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
     
     st.markdown("---")
     st.caption(f"Total de ativos: {len(watchlist)}")
+
