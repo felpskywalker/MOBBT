@@ -23,7 +23,8 @@ from src.pages import (
     calculadora_put,
     screener_put,
     exportador_dfp,
-    volatilidade_iv
+    volatilidade_iv,
+    minha_carteira
 )
 
 # --- Sidebar Nuvegação ---
@@ -47,6 +48,7 @@ with st.sidebar:
             "Calculadora Put",
             "Screener Put",
             "Exportador DFP",
+            "Minha Carteira",
         ],
         icons=[
             "house",
@@ -62,6 +64,7 @@ with st.sidebar:
             "calculator",
             "search",
             "file-earmark-spreadsheet",
+            "bookmark-star",
         ],
         menu_icon="speedometer2",
         default_index=0,
@@ -128,3 +131,6 @@ elif pagina_selecionada == "Screener Put":
 
 elif pagina_selecionada == "Exportador DFP":
     exportador_dfp.render()
+
+elif pagina_selecionada == "Minha Carteira":
+    minha_carteira.render()

@@ -13,4 +13,5 @@ streamlit-option-menu
 pandas_ta
 scipy
 requests
+supabase
 
