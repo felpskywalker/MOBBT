@@ -91,37 +91,64 @@ def render():
     with st.spinner("Buscando cotações..."):
         stock_data = get_stock_data(symbols)
     
-    # Exibir tabela com botões de delete
+    # Montar DataFrame
+    df_data = []
     for item in watchlist:
         symbol = item["symbol"]
         data = stock_data.get(symbol, {})
         preco_atual = data.get("price")
         variacao = data.get("change_pct")
         
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-        
-        with col1:
-            st.markdown(f"**{symbol}**")
-        
-        with col2:
-            st.markdown(f"R$ {preco_atual:.2f}" if preco_atual else "N/A")
-        
-        with col3:
-            if variacao is not None:
-                color = "green" if variacao >= 0 else "red"
-                arrow = "▲" if variacao >= 0 else "▼"
-                st.markdown(f":{color}[{arrow} {variacao:+.2f}%]")
-            else:
-                st.markdown("N/A")
-        
-        with col4:
-            if st.button("🗑️", key=f"delete_{item['id']}", help="Remover ativo"):
+        df_data.append({
+            "id": item["id"],
+            "Ticker": symbol,
+            "Preço Atual (R$)": preco_atual if preco_atual else None,
+            "Variação (%)": variacao if variacao else None,
+        })
+    
+    df = pd.DataFrame(df_data)
+    
+    # Exibir tabela ordenável (st.dataframe tem ordenação nativa)
+    st.dataframe(
+        df[["Ticker", "Preço Atual (R$)", "Variação (%)"]],
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", width="medium"),
+            "Preço Atual (R$)": st.column_config.NumberColumn(
+                "Preço Atual (R$)",
+                format="R$ %.2f",
+                width="medium"
+            ),
+            "Variação (%)": st.column_config.NumberColumn(
+                "Variação (%)",
+                format="%.2f%%",
+                width="medium"
+            ),
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+    
+    st.markdown("---")
+    
+    # Seção de remoção de ativos
+    st.subheader("🗑️ Remover Ativo")
+    
+    col_del1, col_del2 = st.columns([3, 1])
+    with col_del1:
+        ticker_to_delete = st.selectbox(
+            "Selecione o ativo para remover",
+            options=[(item["id"], item["symbol"]) for item in watchlist],
+            format_func=lambda x: x[1],
+            label_visibility="collapsed"
+        )
+    with col_del2:
+        if st.button("Remover", type="secondary", use_container_width=True):
+            if ticker_to_delete:
                 try:
-                    delete_stock(item["id"])
+                    delete_stock(ticker_to_delete[0])
+                    st.success(f"✅ {ticker_to_delete[1]} removido!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
     
-    st.markdown("---")
     st.caption(f"Total de ativos: {len(watchlist)}")
-
