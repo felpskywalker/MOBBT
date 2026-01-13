@@ -8,40 +8,93 @@ import yfinance as yf
 from src.data_loaders.db import get_watchlist, add_stock, delete_stock
 
 
-def get_stock_data(symbols: list) -> dict:
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def get_stock_data_batch(symbols: list) -> pd.DataFrame:
     """
-    Busca preços atuais e variação dos ativos via yfinance.
+    Busca preços atuais e variação dos ativos via yfinance (batch).
+    Usa yf.download() para buscar todos os tickers de uma vez.
     
     Args:
         symbols: Lista de tickers (ex: ['WEGE3', 'PETR4'])
     
     Returns:
-        Dict com ticker -> {'price': float, 'change_pct': float}
+        DataFrame com ticker, preço e variação
     """
     if not symbols:
-        return {}
+        return pd.DataFrame()
     
-    data = {}
-    for symbol in symbols:
-        try:
-            ticker = yf.Ticker(f"{symbol}.SA")
-            info = ticker.fast_info
-            current_price = info.get("lastPrice") or info.get("regularMarketPrice")
-            previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
-            
-            if current_price and previous_close:
-                change_pct = ((current_price - previous_close) / previous_close) * 100
+    # Adiciona .SA para todos os tickers
+    tickers_sa = [f"{s}.SA" for s in symbols]
+    
+    try:
+        # Download dos últimos 2 dias para calcular variação
+        df = yf.download(tickers_sa, period="2d", progress=False, auto_adjust=True)
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        results = []
+        
+        # Se só tem 1 ticker, a estrutura é diferente
+        if len(tickers_sa) == 1:
+            ticker = symbols[0]
+            if len(df) >= 2:
+                current_price = df['Close'].iloc[-1]
+                prev_close = df['Close'].iloc[-2]
+                change_pct = ((current_price - prev_close) / prev_close) * 100
+            elif len(df) == 1:
+                current_price = df['Close'].iloc[-1]
+                change_pct = 0.0
             else:
+                current_price = None
                 change_pct = None
             
-            data[symbol] = {
-                "price": current_price,
-                "change_pct": change_pct
-            }
-        except Exception:
-            data[symbol] = {"price": None, "change_pct": None}
+            results.append({
+                "Ticker": ticker,
+                "Preço Atual (R$)": float(current_price) if current_price else None,
+                "Variação (%)": float(change_pct) if change_pct else None
+            })
+        else:
+            # Múltiplos tickers - estrutura MultiIndex
+            for i, symbol in enumerate(symbols):
+                ticker_sa = f"{symbol}.SA"
+                try:
+                    if ticker_sa in df['Close'].columns:
+                        prices = df['Close'][ticker_sa].dropna()
+                        if len(prices) >= 2:
+                            current_price = prices.iloc[-1]
+                            prev_close = prices.iloc[-2]
+                            change_pct = ((current_price - prev_close) / prev_close) * 100
+                        elif len(prices) == 1:
+                            current_price = prices.iloc[-1]
+                            change_pct = 0.0
+                        else:
+                            current_price = None
+                            change_pct = None
+                        
+                        results.append({
+                            "Ticker": symbol,
+                            "Preço Atual (R$)": float(current_price) if current_price else None,
+                            "Variação (%)": float(change_pct) if change_pct else None
+                        })
+                    else:
+                        results.append({
+                            "Ticker": symbol,
+                            "Preço Atual (R$)": None,
+                            "Variação (%)": None
+                        })
+                except Exception:
+                    results.append({
+                        "Ticker": symbol,
+                        "Preço Atual (R$)": None,
+                        "Variação (%)": None
+                    })
+        
+        return pd.DataFrame(results)
     
-    return data
+    except Exception as e:
+        st.warning(f"Erro ao buscar cotações: {e}")
+        return pd.DataFrame([{"Ticker": s, "Preço Atual (R$)": None, "Variação (%)": None} for s in symbols])
 
 
 def render():
@@ -70,6 +123,7 @@ def render():
             try:
                 add_stock(ticker_input)
                 st.success(f"✅ {ticker_input.upper()} adicionado com sucesso!")
+                st.cache_data.clear()  # Limpa cache para buscar novo ticker
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ Erro ao adicionar: {e}")
@@ -85,30 +139,21 @@ def render():
         st.info("Sua watchlist está vazia. Adicione um ativo acima para começar!")
         return
     
-    # Buscar preços atuais e variação
+    # Buscar preços atuais e variação (batch)
     symbols = [item["symbol"] for item in watchlist]
     
     with st.spinner("Buscando cotações..."):
-        stock_data = get_stock_data(symbols)
+        df = get_stock_data_batch(symbols)
     
-    # Montar DataFrame
-    df_data = []
-    for item in watchlist:
-        symbol = item["symbol"]
-        data = stock_data.get(symbol, {})
-        preco_atual = data.get("price")
-        variacao = data.get("change_pct")
-        
-        df_data.append({
-            "id": item["id"],
-            "Ticker": symbol,
-            "Preço Atual (R$)": preco_atual if preco_atual else None,
-            "Variação (%)": variacao if variacao else None,
-        })
+    if df.empty:
+        st.warning("Não foi possível carregar as cotações. Tente novamente em alguns segundos.")
+        return
     
-    df = pd.DataFrame(df_data)
+    # Adicionar IDs para remoção
+    id_map = {item["symbol"]: item["id"] for item in watchlist}
+    df["id"] = df["Ticker"].map(id_map)
     
-    # Exibir tabela ordenável (st.dataframe tem ordenação nativa)
+    # Exibir tabela ordenável
     st.dataframe(
         df[["Ticker", "Preço Atual (R$)", "Variação (%)"]],
         column_config={
@@ -125,30 +170,32 @@ def render():
             ),
         },
         hide_index=True,
-        use_container_width=True
+        use_container_width=True,
+        height=min(400, 35 * len(df) + 38)  # Altura dinâmica baseada no número de linhas
     )
+    
+    st.caption(f"📈 Total de ativos: {len(watchlist)} | Dados com ~15 min de atraso")
     
     st.markdown("---")
     
-    # Seção de remoção de ativos
-    st.subheader("🗑️ Remover Ativo")
-    
-    col_del1, col_del2 = st.columns([3, 1])
-    with col_del1:
-        ticker_to_delete = st.selectbox(
-            "Selecione o ativo para remover",
-            options=[(item["id"], item["symbol"]) for item in watchlist],
-            format_func=lambda x: x[1],
-            label_visibility="collapsed"
-        )
-    with col_del2:
-        if st.button("Remover", type="secondary", use_container_width=True):
-            if ticker_to_delete:
-                try:
-                    delete_stock(ticker_to_delete[0])
-                    st.success(f"✅ {ticker_to_delete[1]} removido!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro: {e}")
-    
-    st.caption(f"Total de ativos: {len(watchlist)}")
+    # Seção de remoção de ativos (APÓS a tabela completa)
+    with st.expander("🗑️ Remover Ativo"):
+        col_del1, col_del2 = st.columns([3, 1])
+        with col_del1:
+            ticker_to_delete = st.selectbox(
+                "Selecione o ativo para remover",
+                options=[(item["id"], item["symbol"]) for item in watchlist],
+                format_func=lambda x: x[1],
+                label_visibility="collapsed"
+            )
+        with col_del2:
+            if st.button("Remover", type="secondary", use_container_width=True):
+                if ticker_to_delete:
+                    try:
+                        delete_stock(ticker_to_delete[0])
+                        st.success(f"✅ {ticker_to_delete[1]} removido!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+
