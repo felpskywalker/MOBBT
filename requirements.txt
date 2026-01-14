@@ -10,7 +10,8 @@ fredapi
 textblob
 openpyxl
 streamlit-option-menu
-streamlit-authenticator
+streamlit-js-eval
+bcrypt
 pandas_ta
 scipy
 requests
