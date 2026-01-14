@@ -14,7 +14,6 @@ configurar_tema_brokeberg()
 # --- Autenticação Persistente com localStorage ---
 import bcrypt
 import hashlib
-from streamlit_js_eval import streamlit_js_eval
 
 # Chave secreta para gerar token (pode ser qualquer string única)
 AUTH_TOKEN_SECRET = "brokeberg_2026_secret_token_key"
@@ -25,6 +24,7 @@ def generate_auth_token(username: str) -> str:
 
 def check_password():
     """Verifica se a senha está correta, usando localStorage para persistência."""
+    from streamlit_js_eval import streamlit_js_eval  # Import lazy para evitar conflito
     
     def verify_password(plain_password: str, hashed_password: str) -> bool:
         """Verifica senha com bcrypt."""
@@ -106,6 +106,7 @@ with st.sidebar:
     st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
     if st.button("🚪 Sair", use_container_width=True):
         # Limpa localStorage e session state
+        from streamlit_js_eval import streamlit_js_eval  # Import lazy
         streamlit_js_eval(js_expressions="localStorage.removeItem('brokeberg_auth_token')", key="clear_token")
         st.session_state["authenticated"] = False
         st.session_state["name"] = None
