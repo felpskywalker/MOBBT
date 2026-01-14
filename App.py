@@ -29,11 +29,16 @@ def secrets_to_dict(secrets_obj):
 credentials = secrets_to_dict(st.secrets.get('credentials', {}))
 cookie_config = secrets_to_dict(st.secrets.get('cookie', {}))
 
+# Garante que expiry_days seja um inteiro
+cookie_expiry = int(cookie_config.get('expiry_days', 30))
+cookie_name = str(cookie_config.get('name', 'brokeberg_token'))
+cookie_key = str(cookie_config.get('key', 'brokeberg_auth_secret_key_2026'))
+
 authenticator = stauth.Authenticate(
     credentials,
-    cookie_config.get('name', 'brokeberg_token'),
-    cookie_config.get('key', 'brokeberg_auth'),
-    cookie_config.get('expiry_days', 30)
+    cookie_name,
+    cookie_key,
+    cookie_expiry
 )
 
 # Página de Login
