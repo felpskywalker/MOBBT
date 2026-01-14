@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="Brokeberg Terminal")
 # Configurar Tema
 configurar_tema_brokeberg()
 
-# --- Autenticação Persistente com localStorage ---
+# --- Autenticação Persistente com query_params ---
 import bcrypt
 import hashlib
 
@@ -20,11 +20,10 @@ AUTH_TOKEN_SECRET = "brokeberg_2026_secret_token_key"
 
 def generate_auth_token(username: str) -> str:
     """Gera um token de autenticação baseado no usuário e secret."""
-    return hashlib.sha256(f"{username}:{AUTH_TOKEN_SECRET}".encode()).hexdigest()
+    return hashlib.sha256(f"{username}:{AUTH_TOKEN_SECRET}".encode()).hexdigest()[:16]  # Token curto para URL
 
 def check_password():
-    """Verifica se a senha está correta, usando localStorage para persistência."""
-    from streamlit_js_eval import streamlit_js_eval  # Import lazy para evitar conflito
+    """Verifica se a senha está correta, usando query_params para persistência."""
     
     def verify_password(plain_password: str, hashed_password: str) -> bool:
         """Verifica senha com bcrypt."""
@@ -44,11 +43,11 @@ def check_password():
     if st.session_state.get("authenticated", False):
         return True
     
-    # Tenta recuperar token do localStorage
-    saved_token = streamlit_js_eval(js_expressions="localStorage.getItem('brokeberg_auth_token')", key="get_token")
+    # Tenta recuperar token do query_params (URL)
+    url_token = st.query_params.get("auth", None)
     
     # Se token existe e é válido, autentica automaticamente
-    if saved_token == expected_token:
+    if url_token == expected_token:
         st.session_state["authenticated"] = True
         st.session_state["name"] = stored_name
         return True
@@ -59,21 +58,19 @@ def check_password():
     
     with st.form("login_form"):
         password = st.text_input("Senha", type="password", placeholder="Digite sua senha...")
-        remember = st.checkbox("Manter conectado", value=True)
         submit = st.form_submit_button("Entrar", use_container_width=True)
         
         if submit:
             if verify_password(password, stored_password):
                 st.session_state["authenticated"] = True
                 st.session_state["name"] = stored_name
-                
-                # Salva token no localStorage se "Manter conectado" estiver marcado
-                if remember:
-                    streamlit_js_eval(js_expressions=f"localStorage.setItem('brokeberg_auth_token', '{expected_token}')", key="set_token")
-                
+                # Adiciona token na URL para persistência
+                st.query_params["auth"] = expected_token
                 st.rerun()
             else:
                 st.error("❌ Senha incorreta!")
+    
+    st.info("💡 **Dica:** Após fazer login, salve a URL nos favoritos para acesso rápido!")
     
     return False
 
@@ -105,9 +102,8 @@ with st.sidebar:
     st.title("Brokeberg Terminal")
     st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
     if st.button("🚪 Sair", use_container_width=True):
-        # Limpa localStorage e session state
-        from streamlit_js_eval import streamlit_js_eval  # Import lazy
-        streamlit_js_eval(js_expressions="localStorage.removeItem('brokeberg_auth_token')", key="clear_token")
+        # Limpa query_params e session state
+        st.query_params.clear()
         st.session_state["authenticated"] = False
         st.session_state["name"] = None
         st.rerun()
