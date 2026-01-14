@@ -3,7 +3,7 @@ import streamlit as st
 from streamlit_option_menu import option_menu
 from datetime import datetime
 from src.config import configurar_tema_brokeberg
-import streamlit_authenticator as stauth
+
 
 # Configuração da Página deve ser a PRIMEIRA coisa
 st.set_page_config(layout="wide", page_title="Brokeberg Terminal")
@@ -11,44 +11,49 @@ st.set_page_config(layout="wide", page_title="Brokeberg Terminal")
 # Configurar Tema
 configurar_tema_brokeberg()
 
-# --- Autenticação ---
-import copy
+# --- Autenticação Simples ---
+import bcrypt
 
-# Converte st.secrets para dict mutável (necessário para streamlit-authenticator)
-def secrets_to_dict(secrets_obj):
-    """Converte recursivamente st.secrets para um dict Python normal."""
-    result = {}
-    for key in secrets_obj.keys():
-        value = secrets_obj[key]
-        if hasattr(value, 'keys'):
-            result[key] = secrets_to_dict(value)
-        else:
-            result[key] = value
-    return result
+def check_password():
+    """Verifica se a senha está correta."""
+    
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        """Verifica senha com bcrypt."""
+        return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
+    
+    # Já está autenticado?
+    if st.session_state.get("authenticated", False):
+        return True
+    
+    # Pega credenciais do secrets
+    try:
+        stored_password = st.secrets["credentials"]["usernames"]["felps"]["password"]
+        stored_name = st.secrets["credentials"]["usernames"]["felps"]["name"]
+    except KeyError:
+        st.error("❌ Credenciais não configuradas. Verifique os secrets.")
+        st.stop()
+        return False
+    
+    # Tela de login
+    st.markdown("## 🔐 Brokeberg Terminal")
+    st.markdown("---")
+    
+    with st.form("login_form"):
+        password = st.text_input("Senha", type="password", placeholder="Digite sua senha...")
+        submit = st.form_submit_button("Entrar", use_container_width=True)
+        
+        if submit:
+            if verify_password(password, stored_password):
+                st.session_state["authenticated"] = True
+                st.session_state["name"] = stored_name
+                st.rerun()
+            else:
+                st.error("❌ Senha incorreta!")
+    
+    return False
 
-credentials = secrets_to_dict(st.secrets.get('credentials', {}))
-cookie_config = secrets_to_dict(st.secrets.get('cookie', {}))
-
-# Garante que expiry_days seja um inteiro
-cookie_expiry = int(cookie_config.get('expiry_days', 30))
-cookie_name = str(cookie_config.get('name', 'brokeberg_token'))
-cookie_key = str(cookie_config.get('key', 'brokeberg_auth_secret_key_2026'))
-
-authenticator = stauth.Authenticate(
-    credentials,
-    cookie_name,
-    cookie_key,
-    cookie_expiry
-)
-
-# Página de Login
-authenticator.login(location='main')
-
-if st.session_state.get("authentication_status") is None:
-    st.warning("Por favor, insira seu usuário e senha.")
-    st.stop()
-elif st.session_state.get("authentication_status") is False:
-    st.error("Usuário ou senha incorretos.")
+# Verifica autenticação
+if not check_password():
     st.stop()
 
 # Se chegou aqui, está autenticado!
@@ -74,7 +79,10 @@ from src.pages import (
 with st.sidebar:
     st.title("Brokeberg Terminal")
     st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
-    authenticator.logout("🚪 Sair", location='sidebar')
+    if st.button("🚪 Sair", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.session_state["name"] = None
+        st.rerun()
     st.markdown("---")
     st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     
