@@ -3,12 +3,42 @@ import streamlit as st
 from streamlit_option_menu import option_menu
 from datetime import datetime
 from src.config import configurar_tema_brokeberg
+import streamlit_authenticator as stauth
 
 # Configuração da Página deve ser a PRIMEIRA coisa
 st.set_page_config(layout="wide", page_title="Brokeberg Terminal")
 
 # Configurar Tema
 configurar_tema_brokeberg()
+
+# --- Autenticação ---
+config = {
+    'credentials': st.secrets.get('credentials', {}),
+    'cookie': {
+        'expiry_days': st.secrets.get('cookie', {}).get('expiry_days', 30),
+        'key': st.secrets.get('cookie', {}).get('key', 'brokeberg_auth'),
+        'name': st.secrets.get('cookie', {}).get('name', 'brokeberg_token')
+    }
+}
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
+
+# Página de Login
+authenticator.login(location='main')
+
+if st.session_state.get("authentication_status") is None:
+    st.warning("Por favor, insira seu usuário e senha.")
+    st.stop()
+elif st.session_state.get("authentication_status") is False:
+    st.error("Usuário ou senha incorretos.")
+    st.stop()
+
+# Se chegou aqui, está autenticado!
 
 # Importar Páginas
 from src.pages import (
@@ -30,6 +60,9 @@ from src.pages import (
 # --- Sidebar Nuvegação ---
 with st.sidebar:
     st.title("Brokeberg Terminal")
+    st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
+    authenticator.logout("🚪 Sair", location='sidebar')
+    st.markdown("---")
     st.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     
     pagina_selecionada = option_menu(
