@@ -12,20 +12,28 @@ st.set_page_config(layout="wide", page_title="Brokeberg Terminal")
 configurar_tema_brokeberg()
 
 # --- Autenticação ---
-config = {
-    'credentials': st.secrets.get('credentials', {}),
-    'cookie': {
-        'expiry_days': st.secrets.get('cookie', {}).get('expiry_days', 30),
-        'key': st.secrets.get('cookie', {}).get('key', 'brokeberg_auth'),
-        'name': st.secrets.get('cookie', {}).get('name', 'brokeberg_token')
-    }
-}
+import copy
+
+# Converte st.secrets para dict mutável (necessário para streamlit-authenticator)
+def secrets_to_dict(secrets_obj):
+    """Converte recursivamente st.secrets para um dict Python normal."""
+    result = {}
+    for key in secrets_obj.keys():
+        value = secrets_obj[key]
+        if hasattr(value, 'keys'):
+            result[key] = secrets_to_dict(value)
+        else:
+            result[key] = value
+    return result
+
+credentials = secrets_to_dict(st.secrets.get('credentials', {}))
+cookie_config = secrets_to_dict(st.secrets.get('cookie', {}))
 
 authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days']
+    credentials,
+    cookie_config.get('name', 'brokeberg_token'),
+    cookie_config.get('key', 'brokeberg_auth'),
+    cookie_config.get('expiry_days', 30)
 )
 
 # Página de Login
