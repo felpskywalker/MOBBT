@@ -1,4 +1,8 @@
 
+# IMPORTANTE: Importar pandas e numpy ANTES do plotly
+# para evitar erro de circular import
+import pandas as pd
+import numpy as np
 import plotly.io as pio
 
 # --- THEME CONSTANTS (BROKEBERG) ---
