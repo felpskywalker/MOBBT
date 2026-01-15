@@ -426,22 +426,27 @@ def render():
         - **Steepness da curva**: Inclinação indica intensidade do regime
         """)
     
-    # Input para escolher ativo
-    col_term1, col_term2 = st.columns([1, 3])
+    # Input para escolher ativo e preço manual (fallback)
+    col_term1, col_term2, col_term3 = st.columns([1, 1, 2])
     with col_term1:
         term_asset = st.text_input("Ativo para Term Structure", value="BOVA11", 
                                    help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
+    with col_term2:
+        manual_price = st.number_input("Preço Manual (opcional)", value=0.0, min_value=0.0, step=0.01,
+                                       help="Digite o preço manualmente se o Yahoo estiver bloqueando")
     
     if term_asset:
         with st.spinner(f"Buscando opções ATM de {term_asset} na B3..."):
             try:
-                from src.models.put_utils import get_asset_price_current
-                
-                # Usa função com cache para evitar rate limit
-                asset_price = get_asset_price_current(term_asset)
-                
-                if asset_price == 0.0:
-                    st.warning(f"⚠️ Não foi possível obter o preço de {term_asset}. O Yahoo pode estar limitando requisições. Tente novamente em alguns segundos.")
+                # Se usuário informou preço manual, usa ele
+                if manual_price > 0:
+                    asset_price = manual_price
+                else:
+                    from src.models.put_utils import get_asset_price_current
+                    asset_price = get_asset_price_current(term_asset)
+                    
+                    if asset_price == 0.0:
+                        st.warning(f"⚠️ Yahoo bloqueando requisições. Digite o preço de {term_asset} manualmente no campo acima.")
                 
                 selic = get_selic_annual()
                 
@@ -529,8 +534,8 @@ def render():
         - Compare o skew atual com médias históricas
         """)
     
-    # Input para escolher ativo e vencimento
-    col_skew1, col_skew2 = st.columns([1, 1])
+    # Input para escolher ativo, vencimento e preço manual
+    col_skew1, col_skew2, col_skew3 = st.columns([1, 1, 1])
     with col_skew1:
         skew_asset = st.text_input("Ativo para Skew Analysis", value="BOVA11", key="skew_asset",
                                    help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
@@ -538,17 +543,22 @@ def render():
         skew_months = st.selectbox("Vencimento", options=[1, 2, 3], index=0, 
                                    format_func=lambda x: f"{x} mês" if x == 1 else f"{x} meses",
                                    help="Selecione o vencimento para análise do skew")
+    with col_skew3:
+        skew_manual_price = st.number_input("Preço Manual (opcional)", value=0.0, min_value=0.0, step=0.01,
+                                            key="skew_manual_price", help="Digite o preço se Yahoo estiver bloqueando")
     
     if skew_asset:
         with st.spinner(f"Buscando opções de {skew_asset} para análise de Skew..."):
             try:
-                from src.models.put_utils import get_asset_price_current
-                
-                # Usa função com cache para evitar rate limit
-                asset_price = get_asset_price_current(skew_asset)
-                
-                if asset_price == 0.0:
-                    st.warning(f"⚠️ Não foi possível obter o preço de {skew_asset}. O Yahoo pode estar limitando requisições. Tente novamente em alguns segundos.")
+                # Se usuário informou preço manual, usa ele
+                if skew_manual_price > 0:
+                    asset_price = skew_manual_price
+                else:
+                    from src.models.put_utils import get_asset_price_current
+                    asset_price = get_asset_price_current(skew_asset)
+                    
+                    if asset_price == 0.0:
+                        st.warning(f"⚠️ Yahoo bloqueando requisições. Digite o preço de {skew_asset} manualmente no campo acima.")
                 
                 selic = get_selic_annual()
                 
