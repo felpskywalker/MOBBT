@@ -802,74 +802,84 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
 def render():
     """Função principal de renderização da página"""
     
-    # Header e explicação
-    render_header_explicacao()
-    
-    # Carregar dados do FRED
-    FRED_API_KEY = st.secrets["general"]["FRED_API_KEY"]
-    
-    with st.spinner("Carregando dados do VXEWZ..."):
-        df_vxewz = carregar_dados_fred(FRED_API_KEY, {'VXEWZCLS': 'CBOE Brazil ETF Volatility Index (VXEWZ)'})
-    
-    if df_vxewz.empty:
-        st.error("Não foi possível carregar os dados do índice VXEWZ.")
-        return
-    
-    vxewz_series = df_vxewz['VXEWZCLS'].dropna()
-    if vxewz_series.empty:
-        st.error("Série do VXEWZ está vazia.")
-        return
-    
-    # Série recente (5 anos)
-    cutoff_5y = vxewz_series.index.max() - pd.DateOffset(years=5)
-    vxewz_recent = vxewz_series[vxewz_series.index >= cutoff_5y]
-    
-    # Cálculos principais
-    valor_atual = vxewz_series.iloc[-1]
-    media_hist = vxewz_recent.mean()
-    std_hist = vxewz_recent.std()
-    z_score = (valor_atual - media_hist) / std_hist
-    percentil = stats.percentileofscore(vxewz_recent, valor_atual)
-    iv_rank_series = calcular_iv_rank(vxewz_series, periodo=252)
-    iv_rank_atual = iv_rank_series.iloc[-1]
-    mm21 = vxewz_series.rolling(window=21).mean().iloc[-1]
-    mm63 = vxewz_series.rolling(window=63).mean().iloc[-1]
-    
-    # Renderizar seções
-    render_metricas_principais(valor_atual, media_hist, iv_rank_atual, percentil, z_score, mm21, vxewz_series)
-    render_diagnostico(iv_rank_atual, mm21, mm63)
-    render_term_structure()
-    render_volatility_skew()
-    render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent)
-    render_iv_rank_historico(iv_rank_series)
-    render_bandas_bollinger(vxewz_series)
-    render_regime_volatilidade(vxewz_series)
-    render_roc_volatilidade(vxewz_series)
-    
-    # Preparar dados para heatmaps (requer yfinance para histórico longo)
-    import yfinance as yf
-    df_analise_base = pd.DataFrame(index=vxewz_series.index).sort_index()
-    
-    for ativo in ATIVOS_ANALISE:
+    try:
+        # Header e explicação
+        render_header_explicacao()
+        
+        # Carregar dados do FRED
         try:
-            dados_ativo = yf.download(ativo, start=vxewz_series.index.min(), end=vxewz_series.index.max(), auto_adjust=False, progress=False)
-            if not dados_ativo.empty:
-                if isinstance(dados_ativo.columns, pd.MultiIndex):
-                    dados_ativo.columns = dados_ativo.columns.get_level_values(0)
-                
-                if 'Adj Close' in dados_ativo.columns:
-                    price_col = dados_ativo['Adj Close']
-                elif 'Close' in dados_ativo.columns:
-                    price_col = dados_ativo['Close']
-                else:
-                    continue
-                
-                ativo_label = ativo.replace('.SA', '')
-                for nome_periodo, dias in PERIODOS_RETORNO.items():
-                    df_analise_base[f'retorno_{nome_periodo} ({ativo_label})'] = price_col.pct_change(periods=dias).shift(-dias) * 100
-        except Exception:
-            pass
+            FRED_API_KEY = st.secrets["general"]["FRED_API_KEY"]
+        except KeyError:
+            st.error("❌ FRED_API_KEY não encontrada nos secrets. Configure em [general] FRED_API_KEY = 'sua_chave'")
+            return
+        
+        with st.spinner("Carregando dados do VXEWZ..."):
+            df_vxewz = carregar_dados_fred(FRED_API_KEY, {'VXEWZCLS': 'CBOE Brazil ETF Volatility Index (VXEWZ)'})
+        
+        if df_vxewz.empty:
+            st.error("Não foi possível carregar os dados do índice VXEWZ.")
+            return
+        
+        vxewz_series = df_vxewz['VXEWZCLS'].dropna()
+        if vxewz_series.empty:
+            st.error("Série do VXEWZ está vazia.")
+            return
+        
+        # Série recente (5 anos)
+        cutoff_5y = vxewz_series.index.max() - pd.DateOffset(years=5)
+        vxewz_recent = vxewz_series[vxewz_series.index >= cutoff_5y]
+        
+        # Cálculos principais
+        valor_atual = vxewz_series.iloc[-1]
+        media_hist = vxewz_recent.mean()
+        std_hist = vxewz_recent.std()
+        z_score = (valor_atual - media_hist) / std_hist
+        percentil = stats.percentileofscore(vxewz_recent, valor_atual)
+        iv_rank_series = calcular_iv_rank(vxewz_series, periodo=252)
+        iv_rank_atual = iv_rank_series.iloc[-1]
+        mm21 = vxewz_series.rolling(window=21).mean().iloc[-1]
+        mm63 = vxewz_series.rolling(window=63).mean().iloc[-1]
+        
+        # Renderizar seções
+        render_metricas_principais(valor_atual, media_hist, iv_rank_atual, percentil, z_score, mm21, vxewz_series)
+        render_diagnostico(iv_rank_atual, mm21, mm63)
+        render_term_structure()
+        render_volatility_skew()
+        render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent)
+        render_iv_rank_historico(iv_rank_series)
+        render_bandas_bollinger(vxewz_series)
+        render_regime_volatilidade(vxewz_series)
+        render_roc_volatilidade(vxewz_series)
+        
+        # Preparar dados para heatmaps (requer yfinance para histórico longo)
+        import yfinance as yf
+        df_analise_base = pd.DataFrame(index=vxewz_series.index).sort_index()
+        
+        for ativo in ATIVOS_ANALISE:
+            try:
+                dados_ativo = yf.download(ativo, start=vxewz_series.index.min(), end=vxewz_series.index.max(), auto_adjust=False, progress=False)
+                if not dados_ativo.empty:
+                    if isinstance(dados_ativo.columns, pd.MultiIndex):
+                        dados_ativo.columns = dados_ativo.columns.get_level_values(0)
+                    
+                    if 'Adj Close' in dados_ativo.columns:
+                        price_col = dados_ativo['Adj Close']
+                    elif 'Close' in dados_ativo.columns:
+                        price_col = dados_ativo['Close']
+                    else:
+                        continue
+                    
+                    ativo_label = ativo.replace('.SA', '')
+                    for nome_periodo, dias in PERIODOS_RETORNO.items():
+                        df_analise_base[f'retorno_{nome_periodo} ({ativo_label})'] = price_col.pct_change(periods=dias).shift(-dias) * 100
+            except Exception:
+                pass
+        
+        render_heatmaps_iv_rank(vxewz_series, iv_rank_series, iv_rank_atual, df_analise_base, cutoff_5y)
+        render_heatmaps_nivel_absoluto(vxewz_series, vxewz_recent, valor_atual, df_analise_base)
+        render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y)
     
-    render_heatmaps_iv_rank(vxewz_series, iv_rank_series, iv_rank_atual, df_analise_base, cutoff_5y)
-    render_heatmaps_nivel_absoluto(vxewz_series, vxewz_recent, valor_atual, df_analise_base)
-    render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y)
+    except Exception as e:
+        st.error(f"❌ Erro inesperado na página Volatilidade IV: {e}")
+        st.code(traceback.format_exc(), language="python")
+
