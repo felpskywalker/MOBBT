@@ -20,24 +20,40 @@ def get_selic_annual():
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_asset_price_current(ticker):
-    """Busca preço ATUAL do ativo via yfinance"""
-    try:
-        full_ticker = ticker if ticker.endswith(".SA") else f"{ticker}.SA"
-        stock = yf.Ticker(full_ticker)
-        data = stock.history(period="1d")
-        
-        if data.empty:
+    """Busca preço ATUAL do ativo via yfinance usando yf.download (mais confiável)"""
+    import time
+    
+    full_ticker = ticker if ticker.endswith(".SA") else f"{ticker}.SA"
+    
+    # Tenta até 2 vezes com pequeno delay
+    for attempt in range(2):
+        try:
+            # yf.download é mais confiável que yf.Ticker().history() no Streamlit Cloud
+            data = yf.download(full_ticker, period="5d", progress=False, auto_adjust=False)
+            
+            if data.empty:
+                if attempt == 0:
+                    time.sleep(1)  # Pequeno delay antes de retry
+                    continue
+                return 0.0
+            
+            # Trata MultiIndex
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            
+            # Remove NaN
+            data = data.dropna(subset=['Close'])
+            
+            if not data.empty:
+                return float(data['Close'].iloc[-1])
             return 0.0
-            
-        # Garante que não é MultiIndex
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-            
-        if not data.empty:
-            return float(data['Close'].iloc[-1])
-        return 0.0
-    except:
-        return 0.0
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(1)  # Pequeno delay antes de retry
+                continue
+            return 0.0
+    
+    return 0.0
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_asset_price_yesterday(ticker):
