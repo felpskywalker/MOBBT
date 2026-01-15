@@ -6,7 +6,6 @@ Inclui: Term Structure, Volatility Skew, IV Rank, Bandas de Bollinger, Regime, R
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
 import traceback
 from scipy import stats
 from datetime import date
@@ -39,31 +38,6 @@ from src.components.charts_amplitude import (
 ATIVOS_ANALISE = ['BOVA11.SA', 'SMAL11.SA']
 PERIODOS_RETORNO = {'1 Mês': 21, '3 Meses': 63, '6 Meses': 126, '1 Ano': 252}
 
-
-# ============================================================
-# FUNÇÕES AUXILIARES - PREÇO DO ATIVO
-# ============================================================
-def buscar_preco_ativo(ticker):
-    """
-    Busca o preço atual do ativo via yfinance.
-    Retorna 0.0 se não conseguir.
-    """
-    try:
-        full_ticker = ticker if ticker.endswith(".SA") else f"{ticker}.SA"
-        data = yf.download(full_ticker, period="5d", progress=False, auto_adjust=False)
-        
-        if data.empty:
-            return 0.0
-        
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        
-        data = data.dropna(subset=['Close'])
-        if not data.empty:
-            return float(data['Close'].iloc[-1])
-        return 0.0
-    except Exception:
-        return 0.0
 
 
 # ============================================================
@@ -415,9 +389,9 @@ def render_term_structure():
                 if manual_price > 0:
                     asset_price = manual_price
                 else:
-                    asset_price = buscar_preco_ativo(term_asset)
+                    asset_price = get_asset_price_yesterday(term_asset)
                     if asset_price == 0.0:
-                        st.warning(f"⚠️ Yahoo bloqueando requisições. Digite o preço de {term_asset} manualmente.")
+                        st.warning(f"⚠️ Não foi possível obter o preço. Digite o preço de {term_asset} manualmente.")
                 
                 selic = get_selic_annual()
                 
@@ -513,9 +487,9 @@ def render_volatility_skew():
                 if skew_manual_price > 0:
                     asset_price = skew_manual_price
                 else:
-                    asset_price = buscar_preco_ativo(skew_asset)
+                    asset_price = get_asset_price_yesterday(skew_asset)
                     if asset_price == 0.0:
-                        st.warning(f"⚠️ Yahoo bloqueando requisições. Digite o preço manualmente.")
+                        st.warning(f"⚠️ Não foi possível obter o preço. Digite o preço manualmente.")
                 
                 selic = get_selic_annual()
                 
@@ -872,7 +846,8 @@ def render():
     render_regime_volatilidade(vxewz_series)
     render_roc_volatilidade(vxewz_series)
     
-    # Preparar dados para heatmaps
+    # Preparar dados para heatmaps (requer yfinance para histórico longo)
+    import yfinance as yf
     df_analise_base = pd.DataFrame(index=vxewz_series.index).sort_index()
     
     for ativo in ATIVOS_ANALISE:
