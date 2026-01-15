@@ -819,14 +819,20 @@ def render():
         try:
             dados_ativo = yf.download(ativo, start=vxewz_series.index.min(), end=vxewz_series.index.max(), auto_adjust=False, progress=False)
             if not dados_ativo.empty:
+                # Tratar MultiIndex do yfinance
+                if isinstance(dados_ativo.columns, pd.MultiIndex):
+                    dados_ativo.columns = dados_ativo.columns.get_level_values(0)
+                
                 if 'Adj Close' in dados_ativo.columns:
-                    price_series = dados_ativo[['Adj Close']]
+                    price_col = dados_ativo['Adj Close']
+                elif 'Close' in dados_ativo.columns:
+                    price_col = dados_ativo['Close']
                 else:
-                    price_series = dados_ativo[['Close']]
-                price_series.columns = ['price']
+                    continue
+                
                 ativo_label = ativo.replace('.SA', '')
                 for nome_periodo, dias in PERIODOS_RETORNO.items():
-                    df_analise_base[f'retorno_{nome_periodo} ({ativo_label})'] = price_series['price'].pct_change(periods=dias).shift(-dias) * 100
+                    df_analise_base[f'retorno_{nome_periodo} ({ativo_label})'] = price_col.pct_change(periods=dias).shift(-dias) * 100
         except Exception:
             pass
 
