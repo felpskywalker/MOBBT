@@ -58,7 +58,7 @@ def check_password():
     
     with st.form("login_form"):
         password = st.text_input("Senha", type="password", placeholder="Digite sua senha...")
-        submit = st.form_submit_button("Entrar", width='stretch')
+        submit = st.form_submit_button("Entrar", use_container_width=True)
         
         if submit:
             if verify_password(password, stored_password):
@@ -81,27 +81,33 @@ if not check_password():
 # Se chegou aqui, está autenticado!
 
 # Importar Páginas
-from src.pages import (
-    dashboard_tesouro,
-    credito_privado,
-    market_breadth,
-    economicos_br,
-    dashboard_commodities,
-    dashboard_internacional,
-    acoes_br,
-    radar_insiders,
-    calculadora_put,
-    screener_put,
-    exportador_dfp,
-    volatilidade_iv,
-    minha_carteira
-)
+try:
+    from src.pages import (
+        dashboard_tesouro,
+        credito_privado,
+        market_breadth,
+        economicos_br,
+        dashboard_commodities,
+        dashboard_internacional,
+        acoes_br,
+        radar_insiders,
+        calculadora_put,
+        screener_put,
+        exportador_dfp,
+        volatilidade_iv,
+        minha_carteira
+    )
+except Exception as e:
+    st.error(f"❌ Erro fatal ao carregar módulos das páginas: {e}")
+    import traceback
+    st.code(traceback.format_exc(), language="python")
+    st.stop()
 
 # --- Sidebar Nuvegação ---
 with st.sidebar:
     st.title("Brokeberg Terminal")
     st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
-    if st.button("🚪 Sair", width='stretch'):
+    if st.button("🚪 Sair", use_container_width=True):
         # Limpa query_params e session state
         st.query_params.clear()
         st.session_state["authenticated"] = False
