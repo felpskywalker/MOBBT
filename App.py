@@ -58,7 +58,7 @@ def check_password():
     
     with st.form("login_form"):
         password = st.text_input("Senha", type="password", placeholder="Digite sua senha...")
-        submit = st.form_submit_button("Entrar", use_container_width=True)
+        submit = st.form_submit_button("Entrar", width='stretch')
         
         if submit:
             if verify_password(password, stored_password):
@@ -101,7 +101,7 @@ from src.pages import (
 with st.sidebar:
     st.title("Brokeberg Terminal")
     st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
-    if st.button("🚪 Sair", use_container_width=True):
+    if st.button("🚪 Sair", width='stretch'):
         # Limpa query_params e session state
         st.query_params.clear()
         st.session_state["authenticated"] = False

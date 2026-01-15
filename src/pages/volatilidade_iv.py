@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import traceback
+import yfinance as yf
 from scipy import stats
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -402,7 +403,7 @@ def render_term_structure():
                         col_chart, col_info = st.columns([3, 1])
                         
                         with col_chart:
-                            st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True)
+                            st.plotly_chart(gerar_grafico_term_structure(df_term), width='stretch')
                         
                         with col_info:
                             st.metric("Preço Atual", f"R$ {asset_price:.2f}")
@@ -425,7 +426,7 @@ def render_term_structure():
                             df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
                             df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
                             df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                            st.dataframe(df_display, hide_index=True, use_container_width=True)
+                            st.dataframe(df_display, hide_index=True, width='stretch')
                     else:
                         st.warning(f"Não foram encontradas opções ATM com liquidez para {term_asset}.")
                 else:
@@ -506,7 +507,7 @@ def render_volatility_skew():
                             col_chart, col_info = st.columns([3, 1])
                             
                             with col_chart:
-                                st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True)
+                                st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), width='stretch')
                             
                             with col_info:
                                 st.metric("Preço Atual", f"R$ {asset_price:.2f}")
@@ -539,7 +540,7 @@ def render_volatility_skew():
                                 df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
                                 df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
                                 df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
-                                st.dataframe(df_display, hide_index=True, use_container_width=True)
+                                st.dataframe(df_display, hide_index=True, width='stretch')
                         else:
                             st.warning(f"Poucos dados disponíveis para {skew_asset}.")
                     else:
@@ -570,9 +571,9 @@ def render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent):
     
     col_graf, col_hist = st.columns([2, 1])
     with col_graf:
-        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_series, "Histórico VXEWZ", valor_atual, media_hist), use_container_width=True)
+        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_series, "Histórico VXEWZ", valor_atual, media_hist), width='stretch')
     with col_hist:
-        st.plotly_chart(gerar_histograma_amplitude(vxewz_recent, "Distribuição", valor_atual, media_hist, nbins=50), use_container_width=True)
+        st.plotly_chart(gerar_histograma_amplitude(vxewz_recent, "Distribuição", valor_atual, media_hist, nbins=50), width='stretch')
     
     st.markdown("---")
 
@@ -599,7 +600,7 @@ def render_iv_rank_historico(iv_rank_series):
         | 80-100% | IV muito alta | Vender opções |
         """)
     
-    st.plotly_chart(gerar_grafico_iv_rank(iv_rank_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_iv_rank(iv_rank_series), width='stretch')
     st.markdown("---")
 
 
@@ -622,7 +623,7 @@ def render_bandas_bollinger(vxewz_series):
         ⚠️ **Volatilidade é mean-reverting**: Extremos são oportunidades!
         """)
     
-    st.plotly_chart(gerar_grafico_iv_bandas(vxewz_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_iv_bandas(vxewz_series), width='stretch')
     st.markdown("---")
 
 
@@ -645,7 +646,7 @@ def render_regime_volatilidade(vxewz_series):
         - **Estado de stress** do mercado
         """)
     
-    st.plotly_chart(gerar_grafico_regime_volatilidade(vxewz_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_regime_volatilidade(vxewz_series), width='stretch')
     st.markdown("---")
 
 
@@ -665,7 +666,7 @@ def render_roc_volatilidade(vxewz_series):
         📉 **Queda < -30%**: Volatilidade colapsando → fim de crise
         """)
     
-    st.plotly_chart(gerar_grafico_roc_volatilidade(vxewz_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_roc_volatilidade(vxewz_series), width='stretch')
     st.markdown("---")
 
 
@@ -694,7 +695,7 @@ def render_heatmaps_iv_rank(vxewz_series, iv_rank_series, iv_rank_atual, df_anal
     col_hist, col_heat = st.columns([1, 2])
     
     with col_hist:
-        st.plotly_chart(gerar_histograma_amplitude(iv_rank_series.dropna(), "Distribuição do IV Rank", iv_rank_atual, iv_rank_series.mean(), nbins=50), use_container_width=True)
+        st.plotly_chart(gerar_histograma_amplitude(iv_rank_series.dropna(), "Distribuição do IV Rank", iv_rank_atual, iv_rank_series.mean(), nbins=50), width='stretch')
     
     with col_heat:
         for ativo in ATIVOS_ANALISE:
@@ -708,8 +709,8 @@ def render_heatmaps_iv_rank(vxewz_series, iv_rank_series, iv_rank_atual, df_anal
                 df_hit = resultados_ivr['Taxa de Acerto'][cols_ativo].rename(columns=lambda x: x.replace(sufixo, ''))
                 
                 c1, c2 = st.columns(2)
-                c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual, "Retorno Médio"), use_container_width=True)
-                c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual, "Taxa de Acerto"), use_container_width=True)
+                c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual, "Retorno Médio"), width='stretch')
+                c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual, "Taxa de Acerto"), width='stretch')
     
     st.markdown("---")
 
@@ -751,8 +752,8 @@ def render_heatmaps_nivel_absoluto(vxewz_series, vxewz_recent, valor_atual, df_a
             df_hit = resultados_vx['Taxa de Acerto'][cols_ativo].rename(columns=lambda x: x.replace(sufixo, ''))
             
             c1, c2 = st.columns(2)
-            c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual_vx, "Retorno Médio"), use_container_width=True)
-            c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual_vx, "Taxa de Acerto"), use_container_width=True)
+            c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual_vx, "Retorno Médio"), width='stretch')
+            c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual_vx, "Taxa de Acerto"), width='stretch')
     
     st.markdown("---")
 
@@ -776,7 +777,7 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
                     f"{vxewz_recent.kurtosis():.2f}"
                 ]
             })
-            st.dataframe(stats_df, hide_index=True, use_container_width=True)
+            st.dataframe(stats_df, hide_index=True, width='stretch')
         
         with col_stat2:
             st.markdown("**IV Rank (5 Anos)**")
@@ -793,7 +794,8 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
                     f"{(iv_rank_recent <= 20).mean() * 100:.1f}%"
                 ]
             })
-            st.dataframe(stats_ivr, hide_index=True, use_container_width=True)
+            st.dataframe(stats_ivr, hide_index=True, width='stretch')
+
 
 
 # ============================================================
@@ -802,17 +804,24 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
 def render():
     """Função principal de renderização da página"""
     
+    # Debug inicial - deve aparecer sempre
+    st.write("### 🔍 Debug: Iniciando renderização da página...")
+    
+    # 1. Header e explicação
+    render_header_explicacao()
+    st.markdown("---")
+    
     try:
-        # Header e explicação
-        render_header_explicacao()
-        
-        # Carregar dados do FRED
+        # 2. Carregar segredos
+        st.write("DEBUG: Carregando secrets...")
         try:
             FRED_API_KEY = st.secrets["general"]["FRED_API_KEY"]
-        except KeyError:
-            st.error("❌ FRED_API_KEY não encontrada nos secrets. Configure em [general] FRED_API_KEY = 'sua_chave'")
+        except Exception as e:
+            st.error(f"❌ Erro ao acessar secrets: {e}. Certifique-se que FRED_API_KEY existe em [general].")
             return
         
+        # 3. Carregar dados FRED
+        st.write("DEBUG: Chamando API do FRED...")
         with st.spinner("Carregando dados do VXEWZ..."):
             df_vxewz = carregar_dados_fred(FRED_API_KEY, {'VXEWZCLS': 'CBOE Brazil ETF Volatility Index (VXEWZ)'})
         
@@ -820,12 +829,14 @@ def render():
             st.error("Não foi possível carregar os dados do índice VXEWZ.")
             return
         
+        st.write("DEBUG: Dados FRED carregados com sucesso.")
         vxewz_series = df_vxewz['VXEWZCLS'].dropna()
         if vxewz_series.empty:
             st.error("Série do VXEWZ está vazia.")
             return
         
-        # Série recente (5 anos)
+        # 4. Cálculos Iniciais
+        st.write("DEBUG: Iniciando cálculos estatísticos...")
         cutoff_5y = vxewz_series.index.max() - pd.DateOffset(years=5)
         vxewz_recent = vxewz_series[vxewz_series.index >= cutoff_5y]
         
@@ -851,12 +862,12 @@ def render():
         render_regime_volatilidade(vxewz_series)
         render_roc_volatilidade(vxewz_series)
         
-        # Preparar dados para heatmaps (requer yfinance para histórico longo)
-        import yfinance as yf
+        # Preparar dados para heatmaps (historico longo via yfinance)
         df_analise_base = pd.DataFrame(index=vxewz_series.index).sort_index()
         
         for ativo in ATIVOS_ANALISE:
             try:
+                # yf já importado no topo
                 dados_ativo = yf.download(ativo, start=vxewz_series.index.min(), end=vxewz_series.index.max(), auto_adjust=False, progress=False)
                 if not dados_ativo.empty:
                     if isinstance(dados_ativo.columns, pd.MultiIndex):
@@ -882,4 +893,5 @@ def render():
     except Exception as e:
         st.error(f"❌ Erro inesperado na página Volatilidade IV: {e}")
         st.code(traceback.format_exc(), language="python")
+
 
