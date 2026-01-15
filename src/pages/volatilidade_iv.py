@@ -6,6 +6,7 @@ from scipy import stats
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 import plotly.graph_objects as go
+import traceback
 from src.data_loaders.fred_api import carregar_dados_fred
 from src.models.amplitude import analisar_retornos_por_faixa
 from src.components.charts_amplitude import (
@@ -491,6 +492,7 @@ def render():
                     st.error(f"Não foi possível obter o preço de {term_asset}")
             except Exception as e:
                 st.error(f"Erro ao calcular Term Structure: {e}")
+                st.code(traceback.format_exc(), language="python")
 
     st.markdown("---")
 
@@ -625,6 +627,7 @@ def render():
                     st.error(f"Não foi possível obter o preço de {skew_asset}")
             except Exception as e:
                 st.error(f"Erro ao calcular Volatility Skew: {e}")
+                st.code(traceback.format_exc(), language="python")
 
     st.markdown("---")
 
