@@ -1,4 +1,4 @@
-# requirements.txt
+# requirements.txt atualizado em 15/01/2026
 
 streamlit
 pandas
