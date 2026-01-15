@@ -60,9 +60,8 @@ def get_asset_price_yesterday(ticker):
     """Busca preço de FECHAMENTO DE ONTEM do ativo (mesmo dia da B3 API)"""
     try:
         full_ticker = ticker if ticker.endswith(".SA") else f"{ticker}.SA"
-        stock = yf.Ticker(full_ticker)
-        # Busca últimos 5 dias para garantir ter dados
-        data = stock.history(period="5d")
+        # yf.download é mais confiável no Streamlit Cloud
+        data = yf.download(full_ticker, period="5d", progress=False, auto_adjust=False)
         
         if data.empty:
             return 0.0
