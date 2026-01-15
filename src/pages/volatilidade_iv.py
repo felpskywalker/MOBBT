@@ -58,6 +58,11 @@ def calcular_term_structure(asset_ticker, asset_price, selic_annual, num_vencime
                 # Calcula IV
                 try:
                     iv = implied_volatility(option_price, asset_price, atm_strike, T, r)
+                    
+                    # Verifica se IV é válido (não NaN, não infinito)
+                    if iv is None or np.isnan(iv) or np.isinf(iv):
+                        continue
+                    
                     iv_pct = iv * 100
                     
                     if 5 < iv_pct < 200:  # Filtra valores absurdos
@@ -69,7 +74,7 @@ def calcular_term_structure(asset_ticker, asset_price, selic_annual, num_vencime
                             'option_ticker': option_ticker,
                             'option_price': option_price
                         })
-                except:
+                except Exception:
                     pass
         except Exception as e:
             continue
@@ -178,6 +183,11 @@ def calcular_volatility_skew(asset_ticker, asset_price, selic_annual, expiry_dat
                 # Calcula IV
                 try:
                     iv = implied_volatility(option_price, asset_price, strike, T, r)
+                    
+                    # Verifica se IV é válido (não NaN, não infinito)
+                    if iv is None or np.isnan(iv) or np.isinf(iv):
+                        continue
+                    
                     iv_pct = iv * 100
                     
                     if 5 < iv_pct < 200:  # Filtra valores absurdos
@@ -189,7 +199,7 @@ def calcular_volatility_skew(asset_ticker, asset_price, selic_annual, expiry_dat
                             'option_ticker': option_ticker,
                             'option_price': option_price
                         })
-                except:
+                except Exception:
                     pass
         except Exception as e:
             continue
