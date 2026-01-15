@@ -435,21 +435,13 @@ def render():
     if term_asset:
         with st.spinner(f"Buscando opções ATM de {term_asset} na B3..."):
             try:
-                import yfinance as yf
+                from src.models.put_utils import get_asset_price_current
                 
-                # Busca preço do ativo diretamente
-                full_ticker = term_asset if term_asset.endswith(".SA") else f"{term_asset}.SA"
-                stock = yf.Ticker(full_ticker)
-                hist = stock.history(period="5d")
+                # Usa função com cache para evitar rate limit
+                asset_price = get_asset_price_current(term_asset)
                 
-                asset_price = 0.0
-                if not hist.empty:
-                    if isinstance(hist.columns, pd.MultiIndex):
-                        hist.columns = hist.columns.get_level_values(0)
-                    if 'Close' in hist.columns:
-                        hist = hist.dropna(subset=['Close'])
-                        if len(hist) >= 1:
-                            asset_price = float(hist['Close'].iloc[-1])
+                if asset_price == 0.0:
+                    st.warning(f"⚠️ Não foi possível obter o preço de {term_asset}. O Yahoo pode estar limitando requisições. Tente novamente em alguns segundos.")
                 
                 selic = get_selic_annual()
                 
@@ -550,21 +542,13 @@ def render():
     if skew_asset:
         with st.spinner(f"Buscando opções de {skew_asset} para análise de Skew..."):
             try:
-                import yfinance as yf
+                from src.models.put_utils import get_asset_price_current
                 
-                # Busca preço do ativo
-                full_ticker = skew_asset if skew_asset.endswith(".SA") else f"{skew_asset}.SA"
-                stock = yf.Ticker(full_ticker)
-                hist = stock.history(period="5d")
+                # Usa função com cache para evitar rate limit
+                asset_price = get_asset_price_current(skew_asset)
                 
-                asset_price = 0.0
-                if not hist.empty:
-                    if isinstance(hist.columns, pd.MultiIndex):
-                        hist.columns = hist.columns.get_level_values(0)
-                    if 'Close' in hist.columns:
-                        hist = hist.dropna(subset=['Close'])
-                        if len(hist) >= 1:
-                            asset_price = float(hist['Close'].iloc[-1])
+                if asset_price == 0.0:
+                    st.warning(f"⚠️ Não foi possível obter o preço de {skew_asset}. O Yahoo pode estar limitando requisições. Tente novamente em alguns segundos.")
                 
                 selic = get_selic_annual()
                 
