@@ -192,8 +192,20 @@ def render():
         df_be_hist = calcular_breakeven_historico(df_tesouro)
         
         if not df_be_hist.empty and len(df_be_hist.columns) > 0:
-            # Verificar se temos dados suficientes
-            cols_disponiveis = [c for c in df_be_hist.columns if df_be_hist[c].notna().sum() > 10]
+            # Verificar se temos dados suficientes - tratar cada coluna
+            cols_disponiveis = []
+            for c in df_be_hist.columns:
+                try:
+                    count = df_be_hist[c].notna().sum()
+                    if isinstance(count, pd.Series):
+                        count = count.iloc[0]
+                    if count > 10:
+                        cols_disponiveis.append(c)
+                except Exception:
+                    continue
+            
+            # Remover duplicatas
+            cols_disponiveis = list(dict.fromkeys(cols_disponiveis))
             
             if cols_disponiveis:
                 fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist[cols_disponiveis])
@@ -202,9 +214,14 @@ def render():
                 # Mostrar estatísticas
                 with st.expander("📊 Estatísticas do Breakeven"):
                     for col in cols_disponiveis:
-                        serie = df_be_hist[col].dropna()
-                        if len(serie) > 0:
-                            st.markdown(f"**{col}:** Atual: {serie.iloc[-1]:.2f}% | Média: {serie.mean():.2f}% | Mín: {serie.min():.2f}% | Máx: {serie.max():.2f}%")
+                        try:
+                            serie = df_be_hist[col].dropna()
+                            if isinstance(serie, pd.DataFrame):
+                                serie = serie.iloc[:, 0]
+                            if len(serie) > 0:
+                                st.markdown(f"**{col}:** Atual: {serie.iloc[-1]:.2f}% | Média: {serie.mean():.2f}% | Mín: {serie.min():.2f}% | Máx: {serie.max():.2f}%")
+                        except Exception:
+                            continue
             else:
                 st.warning("Dados insuficientes para calcular breakeven histórico.")
         else:
