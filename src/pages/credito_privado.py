@@ -220,15 +220,20 @@ def render():
             # Métricas e características apenas para seleção única
             if len(tickers_list) == 1:
                 ticker_unico = tickers_list[0]
-                df_valid = df_combined.dropna(subset=['% PU da Curva'])
+                # Filtrar apenas pelo ticker específico e ordenar por data
+                df_valid = df_combined[df_combined['Código do Ativo'] == ticker_unico].dropna(subset=['% PU da Curva']).sort_values('Data')
                 
                 if not df_valid.empty:
-                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                     ultimo_pu = df_valid.iloc[-1]['% PU da Curva']
+                    ultima_data = df_valid.iloc[-1]['Data']
                     media_pu = df_valid['% PU da Curva'].mean()
                     min_pu = df_valid['% PU da Curva'].min()
                     max_pu = df_valid['% PU da Curva'].max()
                     
+                    # Mostrar data de referência
+                    st.caption(f"📅 Última negociação: **{ultima_data.strftime('%d/%m/%Y') if hasattr(ultima_data, 'strftime') else ultima_data}**")
+                    
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                     with col_m1:
                         st.metric("Último % PU", f"{ultimo_pu:.2f}%", delta=f"{ultimo_pu - 100:.2f}%")
                     with col_m2:
