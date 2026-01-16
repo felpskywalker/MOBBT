@@ -161,7 +161,7 @@ def render_matriz_correlacao(df_prices: pd.DataFrame, window: int):
     # Tabela com valores
     with st.expander("📋 Tabela de Correlações"):
         st.dataframe(
-            corr_matrix.style.format("{:.2f}").background_gradient(cmap='RdYlGn', vmin=-1, vmax=1),
+            corr_matrix.style.format("{:.2f}"),
             use_container_width=True
         )
 
