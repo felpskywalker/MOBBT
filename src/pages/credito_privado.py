@@ -133,27 +133,8 @@ def render():
     
     scraper = DebenturesScraper()
     
-    # Carregar lista de emissores/ativos recentes (cache para sessão)
-    if 'debentures_recentes' not in st.session_state:
-        with st.spinner("Carregando lista de debêntures recentes..."):
-            df_recentes = scraper.get_precos_ultimos_dias(dias=60)
-            if not df_recentes.empty:
-                # Remover linhas com Emissor ou Código do Ativo nulos
-                df_recentes = df_recentes.dropna(subset=['Emissor', 'Código do Ativo'])
-                emissores = sorted([e for e in df_recentes['Emissor'].unique() if isinstance(e, str)])
-                ativos_por_emissor = df_recentes.groupby('Emissor')['Código do Ativo'].apply(lambda x: sorted([a for a in x.unique() if isinstance(a, str)])).to_dict()
-                st.session_state['debentures_recentes'] = {
-                    'emissores': emissores,
-                    'ativos_por_emissor': ativos_por_emissor,
-                    'todos_ativos': sorted([a for a in df_recentes['Código do Ativo'].unique() if isinstance(a, str)])
-                }
-            else:
-                st.session_state['debentures_recentes'] = {'emissores': [], 'ativos_por_emissor': {}, 'todos_ativos': []}
-    
-    dados_recentes = st.session_state['debentures_recentes']
-    
-    # Linha 1: Período e Filtro Emissor
-    col_periodo, col_emissor = st.columns([1, 2])
+    # Linha 1: Período e Input Manual
+    col_periodo, col_ticker = st.columns([1, 2])
     
     with col_periodo:
         periodo_dias = st.selectbox(
@@ -171,46 +152,54 @@ def render():
             index=6
         )
     
-    with col_emissor:
-        emissor_selecionado = st.selectbox(
-            "Filtrar por Emissor (opcional)",
-            options=["Todos"] + dados_recentes.get('emissores', []),
-            index=0,
-            help="Filtre para ver apenas debêntures de um emissor específico"
+    with col_ticker:
+        ticker_input = st.text_input(
+            "Digite os tickers (separados por vírgula)",
+            placeholder="Ex: BRKM21, VALE25, RECV11",
+            help="Digite um ou mais tickers separados por vírgula"
         )
     
-    # Determinar lista de ativos disponíveis
-    if emissor_selecionado == "Todos":
-        ativos_disponiveis = dados_recentes.get('todos_ativos', [])
+    # Processar tickers
+    if ticker_input:
+        tickers_list = [t.strip().upper() for t in ticker_input.split(',') if t.strip()]
     else:
-        ativos_disponiveis = dados_recentes.get('ativos_por_emissor', {}).get(emissor_selecionado, [])
+        tickers_list = []
     
-    # Linha 2: Seleção de Debêntures (multiselect)
-    col_select, col_manual = st.columns([3, 1])
+    # Expander opcional para buscar lista de emissores recentes
+    with st.expander("🔍 Buscar debêntures recentes (lista auxiliar)", expanded=False):
+        if st.button("Carregar lista de emissores", key="btn_carregar_emissores"):
+            with st.spinner("Carregando lista (pode demorar)..."):
+                df_recentes = scraper.get_precos_ultimos_dias(dias=30)
+                if not df_recentes.empty and 'Emissor' in df_recentes.columns:
+                    df_recentes = df_recentes.dropna(subset=['Emissor', 'Código do Ativo'])
+                    st.session_state['debentures_recentes'] = {
+                        'emissores': sorted([e for e in df_recentes['Emissor'].unique() if isinstance(e, str)]),
+                        'ativos_por_emissor': df_recentes.groupby('Emissor')['Código do Ativo'].apply(lambda x: sorted([a for a in x.unique() if isinstance(a, str)])).to_dict(),
+                        'todos_ativos': sorted([a for a in df_recentes['Código do Ativo'].unique() if isinstance(a, str)])
+                    }
+                else:
+                    st.warning("Não foi possível carregar a lista.")
+        
+        if 'debentures_recentes' in st.session_state and st.session_state['debentures_recentes'].get('emissores'):
+            dados = st.session_state['debentures_recentes']
+            emissor_sel = st.selectbox("Filtrar por Emissor", ["Todos"] + dados['emissores'], key="sel_emissor")
+            
+            if emissor_sel == "Todos":
+                ativos = dados['todos_ativos']
+            else:
+                ativos = dados['ativos_por_emissor'].get(emissor_sel, [])
+            
+            tickers_aux = st.multiselect("Selecione debêntures", ativos, key="sel_tickers_aux")
+            
+            # Combinar com tickers manuais
+            if tickers_aux:
+                tickers_list = list(set(tickers_list + tickers_aux))
     
-    with col_select:
-        tickers_selecionados = st.multiselect(
-            "Selecione Debêntures",
-            options=ativos_disponiveis,
-            default=[],
-            help="Selecione uma ou mais debêntures para comparar"
-        )
-    
-    with col_manual:
-        ticker_manual = st.text_input(
-            "Ou digite manualmente",
-            placeholder="Ex: BRKM21",
-            help="Digite um ticker não listado"
-        ).strip().upper()
-    
-    # Combinar seleções
-    todos_tickers = list(set(tickers_selecionados + ([ticker_manual] if ticker_manual else [])))
-    
-    if todos_tickers:
+    if tickers_list:
         # Buscar dados de todas as debêntures selecionadas
-        with st.spinner(f"Buscando dados de {len(todos_tickers)} debênture(s)..."):
+        with st.spinner(f"Buscando dados de {len(tickers_list)} debênture(s)..."):
             dfs = []
-            for ticker in todos_tickers:
+            for ticker in tickers_list:
                 df_ticker = scraper.get_precos_por_ativo(ticker, dias=periodo_dias)
                 if not df_ticker.empty:
                     dfs.append(df_ticker)
@@ -229,8 +218,8 @@ def render():
             )
             
             # Métricas e características apenas para seleção única
-            if len(todos_tickers) == 1:
-                ticker_unico = todos_tickers[0]
+            if len(tickers_list) == 1:
+                ticker_unico = tickers_list[0]
                 df_valid = df_combined.dropna(subset=['% PU da Curva'])
                 
                 if not df_valid.empty:
@@ -288,7 +277,7 @@ def render():
                 # Múltiplas debêntures - mostrar resumo em tabela
                 st.markdown("#### 📊 Resumo das Debêntures Selecionadas")
                 resumo_data = []
-                for ticker in todos_tickers:
+                for ticker in tickers_list:
                     df_ticker = df_combined[df_combined['Código do Ativo'] == ticker].dropna(subset=['% PU da Curva'])
                     if not df_ticker.empty:
                         ultimo = df_ticker.iloc[-1]['% PU da Curva']
