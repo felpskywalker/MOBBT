@@ -282,7 +282,122 @@ def interpretar_regime(mm21, mm63):
 
 
 # ============================================================
-# FUNÇÕES DE RENDERIZAÇÃO - SEÇÕES
+# FUNÇÕES DE CÁLCULO - IV/HV SPREAD (VOLATILITY RISK PREMIUM)
+# ============================================================
+def calcular_hv_multiplos_periodos(series, periodos=[5, 10, 21, 63]):
+    """
+    Calcula a Volatilidade Histórica (HV) para múltiplos períodos.
+    HV = desvio padrão dos retornos logarítmicos * sqrt(252) * 100
+    
+    Args:
+        series: Série de preços (VXEWZ ou EWZ)
+        periodos: Lista de janelas em dias
+    
+    Returns:
+        DataFrame com HV para cada período
+    """
+    log_returns = np.log(series / series.shift(1))
+    
+    result = pd.DataFrame(index=series.index)
+    for periodo in periodos:
+        hv = log_returns.rolling(window=periodo).std() * np.sqrt(252) * 100
+        result[f'HV_{periodo}d'] = hv
+    
+    return result
+
+
+def calcular_iv_hv_spread(iv_series, hv_series):
+    """
+    Calcula o spread IV - HV (Volatility Risk Premium).
+    
+    Spread positivo = opções caras (IV > HV realizada)
+    Spread negativo = opções baratas (IV < HV realizada)
+    
+    Args:
+        iv_series: Série de IV (ex: VXEWZ)
+        hv_series: Série de HV realizada
+    
+    Returns:
+        Série com o spread
+    """
+    return iv_series - hv_series
+
+
+def interpretar_iv_hv_spread(spread_atual, spread_medio, spread_std):
+    """Retorna interpretação do IV/HV Spread."""
+    z_score = (spread_atual - spread_medio) / spread_std if spread_std > 0 else 0
+    
+    if z_score > 1.5:
+        return "🔴 **SPREAD MUITO ALTO** - Opções extremamente caras. Excelente momento para **vender opções**."
+    elif z_score > 0.5:
+        return "🟠 **SPREAD ALTO** - Opções estão caras. Venda de opções favorecida."
+    elif z_score > -0.5:
+        return "🟡 **SPREAD NEUTRO** - Prêmio de risco em linha com histórico."
+    elif z_score > -1.5:
+        return "🟢 **SPREAD BAIXO** - Opções estão baratas. Compra de opções favorecida."
+    else:
+        return "🔵 **SPREAD MUITO BAIXO** - Opções extremamente baratas. Excelente momento para **comprar opções**."
+
+
+def gerar_grafico_iv_hv_spread(iv_series, hv_series, spread_series):
+    """
+    Gera gráfico de IV vs HV com área preenchida para o spread.
+    """
+    if iv_series.empty or hv_series.empty:
+        fig = go.Figure()
+        fig.update_layout(title_text="Sem dados disponíveis", template='brokeberg')
+        return fig
+    
+    # Últimos 2 anos para melhor visualização
+    cutoff = iv_series.index.max() - pd.DateOffset(years=2)
+    iv_plot = iv_series[iv_series.index >= cutoff]
+    hv_plot = hv_series[hv_series.index >= cutoff]
+    spread_plot = spread_series[spread_series.index >= cutoff]
+    
+    fig = go.Figure()
+    
+    # IV Line
+    fig.add_trace(go.Scatter(
+        x=iv_plot.index, y=iv_plot.values,
+        mode='lines', name='IV (VXEWZ)',
+        line=dict(color='#FF6D00', width=2)
+    ))
+    
+    # HV Line
+    fig.add_trace(go.Scatter(
+        x=hv_plot.index, y=hv_plot.values,
+        mode='lines', name='HV (21d)',
+        line=dict(color='#00E676', width=2)
+    ))
+    
+    # Spread como área (segundo eixo Y)
+    fig.add_trace(go.Scatter(
+        x=spread_plot.index, y=spread_plot.values,
+        mode='lines', name='Spread (IV - HV)',
+        line=dict(color='#636EFA', width=1),
+        fill='tozeroy',
+        fillcolor='rgba(99, 110, 250, 0.2)',
+        yaxis='y2'
+    ))
+    
+    # Linha zero no spread
+    fig.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.3)", 
+                  annotation_text="Spread = 0", yref='y2')
+    
+    fig.update_layout(
+        title_text='IV vs HV (Volatility Risk Premium)',
+        title_x=0, template='brokeberg',
+        xaxis_title="Data",
+        yaxis=dict(title="Volatilidade (%)", side='left'),
+        yaxis2=dict(title="Spread (p.p.)", side='right', overlaying='y', showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=450
+    )
+    
+    return fig
+
+
+
 # ============================================================
 def render_header_explicacao():
     """Renderiza header e explicação inicial"""
@@ -593,6 +708,179 @@ def render_volatility_skew():
     st.markdown("---")
 
 
+def render_iv_hv_spread(vxewz_series, ewz_prices=None):
+    """
+    Renderiza seção de IV/HV Spread (Volatility Risk Premium).
+    
+    Args:
+        vxewz_series: Série de VXEWZ (IV implícita)
+        ewz_prices: Série de preços do EWZ para calcular HV (se None, usa VXEWZ como proxy)
+    """
+    st.subheader("📊 IV/HV Spread (Volatility Risk Premium)")
+    
+    with st.expander("ℹ️ **O que é o IV/HV Spread e como usar?**", expanded=False):
+        st.markdown("""
+        ### Volatility Risk Premium (VRP)
+        
+        O **IV/HV Spread** é a diferença entre a volatilidade **implícita** (IV) precificada pelo mercado 
+        e a volatilidade **realizada** (HV) histórica do ativo.
+        
+        #### Fórmula:
+        `Spread = IV - HV(21d)`
+        
+        #### Interpretação:
+        
+        📈 **Spread Positivo (IV > HV)** - Opções "caras":
+        - Investidores estão pagando prêmio por proteção
+        - Mercado espera volatilidade futura maior que a recente
+        - **Favorece venda de opções** (coleta de prêmio)
+        
+        📉 **Spread Negativo (IV < HV)** - Opções "baratas":
+        - Raro, geralmente após grandes quedas
+        - Mercado subestima volatilidade futura
+        - **Favorece compra de opções** (proteção barata)
+        
+        #### Por que importa:
+        Vendedores de opções lucram quando IV > HV realizada. Este spread mede 
+        o "prêmio de risco" que você coleta ao vender opções.
+        """)
+    
+    if vxewz_series is None or vxewz_series.empty:
+        st.warning("Dados de VXEWZ não disponíveis para análise de IV/HV Spread.")
+        return
+    
+    try:
+        # Usa VXEWZ como base para HV (proxy) se não tiver preços de EWZ
+        # Nota: Idealmente usaríamos EWZ prices, mas VXEWZ já é uma série de volatilidade
+        # Para este caso, calcularemos HV baseada em preços sintéticos
+        
+        # Buscar EWZ via yfinance
+        import yfinance as yf
+        from datetime import timedelta
+        
+        start_date = vxewz_series.index.min()
+        end_date = vxewz_series.index.max()
+        
+        ewz_data = yf.download('EWZ', start=start_date.strftime('%Y-%m-%d'), 
+                              end=end_date.strftime('%Y-%m-%d'), progress=False)
+        
+        if ewz_data.empty:
+            st.warning("Não foi possível carregar dados do EWZ para cálculo de HV.")
+            return
+        
+        # Extrair série de preços
+        if isinstance(ewz_data.columns, pd.MultiIndex):
+            ewz_data.columns = ewz_data.columns.get_level_values(0)
+        
+        if 'Adj Close' in ewz_data.columns:
+            ewz_prices = ewz_data['Adj Close']
+        elif 'Close' in ewz_data.columns:
+            ewz_prices = ewz_data['Close']
+        else:
+            ewz_prices = ewz_data.iloc[:, 0]
+        
+        # Calcular HV para múltiplos períodos
+        df_hv = calcular_hv_multiplos_periodos(ewz_prices, periodos=[5, 10, 21, 63])
+        
+        # Usar HV 21d como principal
+        hv_21d = df_hv['HV_21d']
+        
+        # Alinhar índices
+        aligned_data = pd.DataFrame({
+            'IV': vxewz_series,
+            'HV_21d': hv_21d
+        }).dropna()
+        
+        if aligned_data.empty:
+            st.warning("Dados insuficientes para calcular o spread.")
+            return
+        
+        iv_aligned = aligned_data['IV']
+        hv_aligned = aligned_data['HV_21d']
+        
+        # Calcular spread
+        spread_series = calcular_iv_hv_spread(iv_aligned, hv_aligned)
+        
+        # Métricas atuais
+        iv_atual = iv_aligned.iloc[-1]
+        hv_atual = hv_aligned.iloc[-1]
+        spread_atual = spread_series.iloc[-1]
+        
+        # Estatísticas do spread (últimos 2 anos)
+        cutoff_2y = spread_series.index.max() - pd.DateOffset(years=2)
+        spread_recent = spread_series[spread_series.index >= cutoff_2y]
+        spread_medio = spread_recent.mean()
+        spread_std = spread_recent.std()
+        z_score = (spread_atual - spread_medio) / spread_std if spread_std > 0 else 0
+        percentil = stats.percentileofscore(spread_recent.dropna(), spread_atual)
+        
+        # Exibir métricas
+        m1, m2, m3, m4 = st.columns(4)
+        
+        with m1:
+            st.metric("IV (VXEWZ)", f"{iv_atual:.1f}%")
+            st.metric("HV (21d)", f"{hv_atual:.1f}%")
+        
+        with m2:
+            delta_color = "normal" if spread_atual > 0 else "inverse"
+            st.metric("Spread (IV - HV)", f"{spread_atual:+.1f} p.p.", 
+                     delta=f"Z: {z_score:+.2f}", delta_color="off")
+            st.metric("Spread Médio (2A)", f"{spread_medio:.1f} p.p.")
+        
+        with m3:
+            st.metric("Percentil do Spread", f"{percentil:.0f}%")
+            st.metric("Desvio Padrão", f"{spread_std:.1f} p.p.")
+        
+        with m4:
+            # Indicador visual
+            if spread_atual > spread_medio + spread_std:
+                st.success("✅ **VENDA OPÇÕES**")
+                st.caption("Spread elevado - prêmios atrativos")
+            elif spread_atual < spread_medio - spread_std:
+                st.error("🛡️ **COMPRE PROTEÇÃO**")
+                st.caption("Spread baixo - opções baratas")
+            else:
+                st.info("⚖️ **NEUTRO**")
+                st.caption("Spread em faixa normal")
+        
+        # Interpretação
+        st.markdown(f"**Análise:** {interpretar_iv_hv_spread(spread_atual, spread_medio, spread_std)}")
+        
+        # Gráfico
+        st.plotly_chart(
+            gerar_grafico_iv_hv_spread(iv_aligned, hv_aligned, spread_series),
+            use_container_width=True,
+            key="iv_hv_spread_chart"
+        )
+        
+        # Tabela de HV múltiplos períodos
+        with st.expander("📋 HV por Período"):
+            hv_table = pd.DataFrame({
+                'Período': ['5 dias', '10 dias', '21 dias', '63 dias'],
+                'HV (%)': [
+                    f"{df_hv['HV_5d'].iloc[-1]:.1f}%",
+                    f"{df_hv['HV_10d'].iloc[-1]:.1f}%",
+                    f"{df_hv['HV_21d'].iloc[-1]:.1f}%",
+                    f"{df_hv['HV_63d'].iloc[-1]:.1f}%"
+                ],
+                'Spread vs IV': [
+                    f"{iv_atual - df_hv['HV_5d'].iloc[-1]:+.1f} p.p.",
+                    f"{iv_atual - df_hv['HV_10d'].iloc[-1]:+.1f} p.p.",
+                    f"{iv_atual - df_hv['HV_21d'].iloc[-1]:+.1f} p.p.",
+                    f"{iv_atual - df_hv['HV_63d'].iloc[-1]:+.1f} p.p."
+                ]
+            })
+            st.dataframe(hv_table, hide_index=True, use_container_width=True, key="hv_table")
+    
+    except Exception as e:
+        st.error(f"Erro ao calcular IV/HV Spread: {e}")
+        import traceback
+        st.code(traceback.format_exc(), language="python")
+    
+    st.markdown("---")
+
+
+
 def render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent):
     """Renderiza seção de histórico VXEWZ"""
     st.subheader("📉 Histórico do VXEWZ")
@@ -843,16 +1131,12 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
 def render():
     """Função principal de renderização da página"""
     
-    # Debug inicial - deve aparecer sempre
-    st.write("### 🔍 Debug: Iniciando renderização da página...")
-    
     # 1. Header e explicação
     render_header_explicacao()
     st.markdown("---")
     
     try:
         # 2. Carregar segredos
-        st.write("DEBUG: Carregando secrets...")
         try:
             FRED_API_KEY = st.secrets["general"]["FRED_API_KEY"]
         except Exception as e:
@@ -860,7 +1144,6 @@ def render():
             return
         
         # 3. Carregar dados FRED
-        st.write("DEBUG: Chamando API do FRED...")
         with st.spinner("Carregando dados do VXEWZ..."):
             df_vxewz = carregar_dados_fred(FRED_API_KEY, {'VXEWZCLS': 'CBOE Brazil ETF Volatility Index (VXEWZ)'})
         
@@ -868,14 +1151,12 @@ def render():
             st.error("Não foi possível carregar os dados do índice VXEWZ.")
             return
         
-        st.write("DEBUG: Dados FRED carregados com sucesso.")
         vxewz_series = df_vxewz['VXEWZCLS'].dropna()
         if vxewz_series.empty:
             st.error("Série do VXEWZ está vazia.")
             return
         
         # 4. Cálculos Iniciais
-        st.write("DEBUG: Iniciando cálculos estatísticos...")
         cutoff_5y = vxewz_series.index.max() - pd.DateOffset(years=5)
         vxewz_recent = vxewz_series[vxewz_series.index >= cutoff_5y]
         
@@ -895,6 +1176,7 @@ def render():
         render_diagnostico(iv_rank_atual, mm21, mm63)
         render_term_structure()
         render_volatility_skew()
+        render_iv_hv_spread(vxewz_series)  # IV/HV Spread - Volatility Risk Premium
         render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent)
         render_iv_rank_historico(iv_rank_series)
         render_bandas_bollinger(vxewz_series)

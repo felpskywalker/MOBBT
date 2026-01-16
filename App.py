@@ -101,6 +101,8 @@ with st.sidebar:
             "Crédito Privado",
             "Amplitude",
             "Volatilidade IV",
+            "Correlações",
+            "Calendário",
             "Econômicos BR",
             "Commodities",
             "Internacional",
@@ -118,6 +120,8 @@ with st.sidebar:
             "wallet2",
             "water",
             "activity",
+            "diagram-3",
+            "calendar-event",
             "bar-chart-line-fill",
             "box-seam",
             "globe-americas",
@@ -149,7 +153,8 @@ if pagina_selecionada == "Início":
     ### Ferramentas Disponíveis:
     * **Juros Brasil:** Curvas de juros reais, nominais e spreads.
     * **Crédito Privado:** Spreads de debêntures (IDEX JGP).
-    * **Amplitude:** Análise de Market Breadth (MM200, IFR, Highs/Lows).
+    * **Volatilidade IV:** Análise de IV (VXEWZ) e IV/HV Spread.
+    * **Correlações:** Regime de mercado, matriz de correlação e beta.
     * **Econômicos BR:** Indicadores macroeconômicos do BCB.
     * **Commodities:** Painel de preços de commodities.
     * **Internacional:** Indicadores do FRED (EUA).
@@ -174,6 +179,14 @@ elif pagina_selecionada == "Amplitude":
 elif pagina_selecionada == "Volatilidade IV":
     from src.pages import volatilidade_iv
     volatilidade_iv.render()
+
+elif pagina_selecionada == "Correlações":
+    from src.pages import correlacoes_regime
+    correlacoes_regime.render()
+
+elif pagina_selecionada == "Calendário":
+    from src.pages import event_calendar
+    event_calendar.render()
 
 elif pagina_selecionada == "Econômicos BR":
     from src.pages import economicos_br
