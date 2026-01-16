@@ -79,13 +79,24 @@ def render():
         )
         
         st.markdown("### 💼 Posição")
-        qtd_acoes = st.number_input(
-            "Quantidade de Ações",
-            value=0,
-            step=100,
-            min_value=0,
-            help="Quantidade de ações para estimar lucro em R$"
-        )
+        pos_col1, pos_col2 = st.columns(2)
+        with pos_col1:
+            qtd_acoes = st.number_input(
+                "Quantidade de Ações",
+                value=0,
+                step=100,
+                min_value=0,
+                help="Quantidade de ações para estimar lucro em R$"
+            )
+        with pos_col2:
+            preco_medio = st.number_input(
+                "Preço Médio (R$)",
+                value=0.0,
+                step=0.01,
+                format="%.2f",
+                help="Seu preço médio de compra"
+            )
+
 
     
     with col2:
@@ -237,22 +248,27 @@ def render():
         if qtd_acoes > 0:
             st.markdown("### 💵 Estimativa de Lucro")
             
+            # Usa preço médio se informado, senão usa preço atual
+            preco_base = preco_medio if preco_medio > 0 else preco_atual
+            
             # Cálculos de lucro
-            valor_investido = qtd_acoes * preco_atual
-            lucro_se_fechar = qtd_acoes * upside
+            valor_investido = qtd_acoes * preco_base
+            lucro_se_fechar = qtd_acoes * (preco_aquisicao - preco_base)
+            retorno_posicao = ((preco_aquisicao - preco_base) / preco_base) * 100 if preco_base > 0 else 0
             lucro_com_margem = lucro_se_fechar * (prob_estimada / 100)
-            prejuizo_se_falhar = qtd_acoes * downside
+            prejuizo_se_falhar = qtd_acoes * (preco_base - preco_antes) if preco_base > preco_antes else 0
             
             l1, l2, l3, l4 = st.columns(4)
             l1.metric(
                 "Valor Investido", 
-                f"R$ {valor_investido:,.2f}"
+                f"R$ {valor_investido:,.2f}",
+                help=f"Base: R$ {preco_base:.2f}/ação"
             )
             l2.metric(
                 "Lucro se Fechar", 
                 f"R$ {lucro_se_fechar:,.2f}",
-                delta=f"+{retorno_esperado:.2f}%",
-                delta_color="normal"
+                delta=f"+{retorno_posicao:.2f}%",
+                delta_color="normal" if lucro_se_fechar > 0 else "inverse"
             )
             l3.metric(
                 "Lucro Esperado (c/ prob.)", 
@@ -261,10 +277,16 @@ def render():
             )
             l4.metric(
                 "Prejuízo se Falhar", 
-                f"R$ -{prejuizo_se_falhar:,.2f}",
-                delta=f"-{(downside/preco_atual)*100:.2f}%",
-                delta_color="inverse"
+                f"R$ -{prejuizo_se_falhar:,.2f}" if prejuizo_se_falhar > 0 else "R$ 0,00",
+                delta=f"-{((preco_base - preco_antes)/preco_base)*100:.2f}%" if preco_base > preco_antes else "Sem risco",
+                delta_color="inverse" if prejuizo_se_falhar > 0 else "off"
             )
+            
+            # Mostra preço médio vs atual
+            if preco_medio > 0:
+                ganho_papel = (preco_atual - preco_medio) / preco_medio * 100
+                st.caption(f"📊 Preço médio: R$ {preco_medio:.2f} | Preço atual: R$ {preco_atual:.2f} | Ganho no papel: {ganho_papel:+.2f}%")
+
         
         
         # Análise qualitativa
