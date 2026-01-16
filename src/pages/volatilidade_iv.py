@@ -403,7 +403,7 @@ def render_term_structure():
                         col_chart, col_info = st.columns([3, 1])
                         
                         with col_chart:
-                            st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True)
+                            st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
                         
                         with col_info:
                             st.metric("Preço Atual", f"R$ {asset_price:.2f}")
@@ -426,7 +426,7 @@ def render_term_structure():
                             df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
                             df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
                             df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                            st.dataframe(df_display, hide_index=True, use_container_width=True)
+                            st.dataframe(df_display, hide_index=True, use_container_width=True, key="term_struct_df")
                     else:
                         st.warning(f"Não foram encontradas opções ATM com liquidez para {term_asset}.")
                 else:
@@ -507,7 +507,7 @@ def render_volatility_skew():
                             col_chart, col_info = st.columns([3, 1])
                             
                             with col_chart:
-                                st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True)
+                                st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True, key="skew_chart")
                             
                             with col_info:
                                 st.metric("Preço Atual", f"R$ {asset_price:.2f}")
@@ -540,7 +540,7 @@ def render_volatility_skew():
                                 df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
                                 df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
                                 df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
-                                st.dataframe(df_display, hide_index=True, use_container_width=True)
+                                st.dataframe(df_display, hide_index=True, use_container_width=True, key="skew_df")
                         else:
                             st.warning(f"Poucos dados disponíveis para {skew_asset}.")
                     else:
@@ -571,9 +571,9 @@ def render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent):
     
     col_graf, col_hist = st.columns([2, 1])
     with col_graf:
-        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_series, "Histórico VXEWZ", valor_atual, media_hist), use_container_width=True)
+        st.plotly_chart(gerar_grafico_historico_amplitude(vxewz_series, "Histórico VXEWZ", valor_atual, media_hist), use_container_width=True, key="vxewz_history_chart")
     with col_hist:
-        st.plotly_chart(gerar_histograma_amplitude(vxewz_recent, "Distribuição", valor_atual, media_hist, nbins=50), use_container_width=True)
+        st.plotly_chart(gerar_histograma_amplitude(vxewz_recent, "Distribuição", valor_atual, media_hist, nbins=50), use_container_width=True, key="vxewz_dist_chart")
     
     st.markdown("---")
 
@@ -600,7 +600,7 @@ def render_iv_rank_historico(iv_rank_series):
         | 80-100% | IV muito alta | Vender opções |
         """)
     
-    st.plotly_chart(gerar_grafico_iv_rank(iv_rank_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_iv_rank(iv_rank_series), use_container_width=True, key="iv_rank_chart")
     st.markdown("---")
 
 
@@ -623,7 +623,7 @@ def render_bandas_bollinger(vxewz_series):
         ⚠️ **Volatilidade é mean-reverting**: Extremos são oportunidades!
         """)
     
-    st.plotly_chart(gerar_grafico_iv_bandas(vxewz_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_iv_bandas(vxewz_series), use_container_width=True, key="bb_chart")
     st.markdown("---")
 
 
@@ -646,7 +646,7 @@ def render_regime_volatilidade(vxewz_series):
         - **Estado de stress** do mercado
         """)
     
-    st.plotly_chart(gerar_grafico_regime_volatilidade(vxewz_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_regime_volatilidade(vxewz_series), use_container_width=True, key="regime_chart")
     st.markdown("---")
 
 
@@ -666,7 +666,7 @@ def render_roc_volatilidade(vxewz_series):
         📉 **Queda < -30%**: Volatilidade colapsando → fim de crise
         """)
     
-    st.plotly_chart(gerar_grafico_roc_volatilidade(vxewz_series), use_container_width=True)
+    st.plotly_chart(gerar_grafico_roc_volatilidade(vxewz_series), use_container_width=True, key="roc_chart")
     st.markdown("---")
 
 
@@ -695,7 +695,7 @@ def render_heatmaps_iv_rank(vxewz_series, iv_rank_series, iv_rank_atual, df_anal
     col_hist, col_heat = st.columns([1, 2])
     
     with col_hist:
-        st.plotly_chart(gerar_histograma_amplitude(iv_rank_series.dropna(), "Distribuição do IV Rank", iv_rank_atual, iv_rank_series.mean(), nbins=50), use_container_width=True)
+        st.plotly_chart(gerar_histograma_amplitude(iv_rank_series.dropna(), "Distribuição do IV Rank", iv_rank_atual, iv_rank_series.mean(), nbins=50), use_container_width=True, key="iv_rank_dist_chart")
     
     with col_heat:
         for ativo in ATIVOS_ANALISE:
@@ -709,8 +709,8 @@ def render_heatmaps_iv_rank(vxewz_series, iv_rank_series, iv_rank_atual, df_anal
                 df_hit = resultados_ivr['Taxa de Acerto'][cols_ativo].rename(columns=lambda x: x.replace(sufixo, ''))
                 
                 c1, c2 = st.columns(2)
-                c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual, "Retorno Médio"), use_container_width=True)
-                c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual, "Taxa de Acerto"), use_container_width=True)
+                c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual, "Retorno Médio"), use_container_width=True, key=f"heatmap_ret_{ativo_clean}")
+                c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual, "Taxa de Acerto"), use_container_width=True, key=f"heatmap_hit_{ativo_clean}")
     
     st.markdown("---")
 
@@ -752,8 +752,8 @@ def render_heatmaps_nivel_absoluto(vxewz_series, vxewz_recent, valor_atual, df_a
             df_hit = resultados_vx['Taxa de Acerto'][cols_ativo].rename(columns=lambda x: x.replace(sufixo, ''))
             
             c1, c2 = st.columns(2)
-            c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual_vx, "Retorno Médio"), use_container_width=True)
-            c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual_vx, "Taxa de Acerto"), use_container_width=True)
+            c1.plotly_chart(gerar_heatmap_amplitude(df_ret, faixa_atual_vx, "Retorno Médio"), use_container_width=True, key=f"heatmap_vx_ret_{ativo_clean}")
+            c2.plotly_chart(gerar_heatmap_amplitude(df_hit, faixa_atual_vx, "Taxa de Acerto"), use_container_width=True, key=f"heatmap_vx_hit_{ativo_clean}")
     
     st.markdown("---")
 
@@ -777,7 +777,7 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
                     f"{vxewz_recent.kurtosis():.2f}"
                 ]
             })
-            st.dataframe(stats_df, hide_index=True, use_container_width=True)
+            st.dataframe(stats_df, hide_index=True, use_container_width=True, key="stats_desc_df")
         
         with col_stat2:
             st.markdown("**IV Rank (5 Anos)**")
@@ -794,7 +794,7 @@ def render_estatisticas_descritivas(vxewz_recent, iv_rank_series, cutoff_5y):
                     f"{(iv_rank_recent <= 20).mean() * 100:.1f}%"
                 ]
             })
-            st.dataframe(stats_ivr, hide_index=True, use_container_width=True)
+            st.dataframe(stats_ivr, hide_index=True, use_container_width=True, key="stats_ivr_df")
 
 
 
