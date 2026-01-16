@@ -1,26 +1,27 @@
 
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 from src.data_loaders.tesouro import obter_dados_tesouro
+from src.data_loaders.di_futuro import fetch_curva_di_b3, calcular_juro_10a_di
 from src.models.math_utils import (
     calcular_juro_10a_br, 
     calcular_inflacao_implicita, 
-    calcular_variacao_curva, 
     calcular_breakeven_historico
 )
 from src.components.charts import (
-    gerar_grafico_historico_tesouro,
     gerar_grafico_ntnb_multiplos_vencimentos,
-    gerar_heatmap_variacao_curva,
     gerar_grafico_breakeven_historico,
     gerar_grafico_curva_juros_real_ntnb,
     gerar_grafico_spread_juros,
     gerar_grafico_ettj_generico
 )
 
+
 def render():
-    st.title("Análise de Juros e Inflação (Tesouro Direto)")
+    st.title("Análise de Juros e Inflação")
     st.markdown("---")
 
     df_tesouro = obter_dados_tesouro()
@@ -29,69 +30,137 @@ def render():
         st.error("Não foi possível carregar os dados do Tesouro Direto.")
         return
 
-    # --- Juros Futuros (Proxy 10 anos) ---
-    st.subheader("1. Juros Reais de Longo Prazo (Proxy 10 anos)")
-    st.caption("Baseado na taxa de compra da NTN-B Principal mais próxima de 10 anos de vencimento.")
+    # =======================================================
+    # 1. ETTJ - Dinâmica da Curva Prefixada (TOPO, lado a lado)
+    # =======================================================
+    st.subheader("1. Dinâmica da Curva Prefixada (ETTJ)")
+    st.caption("Evolução temporal das taxas prefixadas em diferentes prazos.")
     
-    serie_10y = calcular_juro_10a_br(df_tesouro)
-    if not serie_10y.empty:
-        ultimo_juro = serie_10y.iloc[-1]
-        delta_juro = ultimo_juro - serie_10y.iloc[-2] if len(serie_10y) > 1 else 0
+    col_ettj1, col_ettj2 = st.columns(2)
+    
+    with col_ettj1:
+        st.markdown("**Curto Prazo**")
+        fig_curto = gerar_grafico_ettj_generico(df_tesouro, 'Tesouro Prefixado', 'Curva Prefixada - Curto Prazo')
+        st.plotly_chart(fig_curto, use_container_width=True, key="ettj_curto")
         
-        col1, col2 = st.columns([1, 4])
-        col1.metric("Juro Real 10y (IPCA+)", f"{ultimo_juro:.2f}%", f"{delta_juro:.2f}%")
-        
-        # O gráfico histórico já é gerado por uma função específica ou podemos usar um genérico
-        # No código original, ele gerava um gráfico específico. Vamos adaptar.
-        # Mas espere, serie_10y é uma Series de taxas.
-        # Precisamos de um gráfico disso. Vou usar o index como x.
-        import plotly.express as px
-        fig_10y = px.line(x=serie_10y.index, y=serie_10y.values, title="Histórico Juro Real 10y (Proxy NTN-B)", template='brokeberg')
-        fig_10y.update_layout(yaxis_title="Taxa (% a.a.)", title_x=0)
-        col2.plotly_chart(fig_10y, use_container_width=True)
-    else:
-        st.warning("Dados insuficientes para calcular Proxy 10y.")
+    with col_ettj2:
+        st.markdown("**Longo Prazo**")
+        fig_longo = gerar_grafico_ettj_generico(df_tesouro, 'Tesouro Prefixado', 'Curva Prefixada - Histórico')
+        st.plotly_chart(fig_longo, use_container_width=True, key="ettj_longo")
 
     st.markdown("---")
 
-    # --- Análise de Títulos Específicos (Múltiplos Vencimentos) ---
-    st.subheader("2. Histórico de Taxas por Vencimento")
+    # =======================================================
+    # 2. Juros de Longo Prazo (Real e Pré)
+    # =======================================================
+    st.subheader("2. Juros de Longo Prazo (Proxy 10 anos)")
     
-    tipos_disponiveis = df_tesouro['Tipo Titulo'].dropna().unique().tolist()
-    tipo_selecionado = st.selectbox("Selecione o Tipo de Título", tipos_disponiveis, index=tipos_disponiveis.index('Tesouro IPCA+') if 'Tesouro IPCA+' in tipos_disponiveis else 0)
+    col_juros1, col_juros2 = st.columns(2)
     
-    df_tipo = df_tesouro[df_tesouro['Tipo Titulo'] == tipo_selecionado]
-    vencimentos_disponiveis = sorted(df_tipo['Data Vencimento'].unique())
+    # --- Juro Real (NTN-B) ---
+    with col_juros1:
+        st.markdown("**Juro Real (IPCA+)**")
+        st.caption("Baseado na taxa de compra da NTN-B mais próxima de 10 anos.")
+        
+        serie_10y_real = calcular_juro_10a_br(df_tesouro)
+        if not serie_10y_real.empty:
+            ultimo_real = serie_10y_real.iloc[-1]
+            delta_real = ultimo_real - serie_10y_real.iloc[-2] if len(serie_10y_real) > 1 else 0
+            
+            st.metric("Juro Real 10y (IPCA+)", f"{ultimo_real:.2f}%", f"{delta_real:+.2f}%")
+            
+            fig_real = px.line(
+                x=serie_10y_real.index, 
+                y=serie_10y_real.values, 
+                title="Histórico Juro Real 10y (Proxy NTN-B)", 
+                template='brokeberg'
+            )
+            fig_real.update_layout(yaxis_title="Taxa (% a.a.)", xaxis_title="Data", title_x=0)
+            fig_real.update_traces(line=dict(color='#00E676'))
+            st.plotly_chart(fig_real, use_container_width=True, key="juro_real_10y")
+        else:
+            st.warning("Dados insuficientes para Juro Real 10y.")
     
-    container_multiselect = st.container()
-    vencimentos_selecionados = container_multiselect.multiselect(
-        "Selecione os Vencimentos", 
-        vencimentos_disponiveis,
-        default=[vencimentos_disponiveis[-1]] if vencimentos_disponiveis else [],
-        format_func=lambda x: x.strftime('%d/%m/%Y')
-    )
-    
-    metrica = st.radio("Métrica", ['Taxa Compra Manha', 'PU Compra Manha'], horizontal=True)
-    
-    fig_multiplo = gerar_grafico_ntnb_multiplos_vencimentos(df_tipo, vencimentos_selecionados, metrica)
-    st.plotly_chart(fig_multiplo, use_container_width=True)
+    # --- Juro Prefixado (DI Futuro ou NTN-F) ---
+    with col_juros2:
+        st.markdown("**Juro Prefixado (Taxa Pré)**")
+        st.caption("Baseado no DI Futuro de 10 anos (B3) ou NTN-F.")
+        
+        # Tentar buscar do DI Futuro primeiro
+        taxa_pre_10y = calcular_juro_10a_di()
+        
+        if taxa_pre_10y:
+            # Se conseguiu do DI
+            st.metric("Juro Pré 10y (DI)", f"{taxa_pre_10y:.2f}%")
+            
+            # Buscar curva completa para gráfico
+            df_curva_di = fetch_curva_di_b3(anos_frente=10)
+            if not df_curva_di.empty:
+                fig_pre = px.line(
+                    df_curva_di,
+                    x='ano',
+                    y='taxa',
+                    title="Curva DI Futuro (B3)",
+                    template='brokeberg',
+                    markers=True
+                )
+                fig_pre.update_layout(yaxis_title="Taxa (% a.a.)", xaxis_title="Ano", title_x=0)
+                fig_pre.update_traces(line=dict(color='#FF6D00'))
+                st.plotly_chart(fig_pre, use_container_width=True, key="curva_di")
+            else:
+                st.info("Curva DI não disponível.")
+        else:
+            # Fallback: usar NTN-F do Tesouro
+            df_ntnf = df_tesouro[df_tesouro['Tipo Titulo'] == 'Tesouro Prefixado'].copy()
+            if not df_ntnf.empty:
+                # Calcular série histórica similar ao juro real
+                resultados_pre = {}
+                for data_base in df_ntnf['Data Base'].unique():
+                    df_dia = df_ntnf[df_ntnf['Data Base'] == data_base]
+                    vencimentos_do_dia = df_dia['Data Vencimento'].unique()
+                    if len(vencimentos_do_dia) > 0:
+                        target_10y = pd.to_datetime(data_base) + pd.DateOffset(years=10)
+                        venc_10y = min(vencimentos_do_dia, key=lambda d: abs(d - target_10y))
+                        taxa = df_dia[df_dia['Data Vencimento'] == venc_10y]['Taxa Compra Manha'].iloc[0]
+                        resultados_pre[data_base] = taxa
+                
+                serie_pre = pd.Series(resultados_pre).sort_index()
+                if not serie_pre.empty:
+                    ultimo_pre = serie_pre.iloc[-1]
+                    delta_pre = ultimo_pre - serie_pre.iloc[-2] if len(serie_pre) > 1 else 0
+                    
+                    st.metric("Juro Pré 10y (NTN-F)", f"{ultimo_pre:.2f}%", f"{delta_pre:+.2f}%")
+                    
+                    fig_pre = px.line(
+                        x=serie_pre.index, 
+                        y=serie_pre.values, 
+                        title="Histórico Juro Pré 10y (NTN-F)", 
+                        template='brokeberg'
+                    )
+                    fig_pre.update_layout(yaxis_title="Taxa (% a.a.)", xaxis_title="Data", title_x=0)
+                    fig_pre.update_traces(line=dict(color='#FF6D00'))
+                    st.plotly_chart(fig_pre, use_container_width=True, key="juro_pre_tesouro")
+                else:
+                    st.warning("Dados insuficientes para Juro Pré 10y.")
+            else:
+                st.warning("DI Futuro indisponível e não há dados de NTN-F.")
 
     st.markdown("---")
 
-    # --- Curva de Juros e Inflação Implícita ---
+    # =======================================================
+    # 3. Curva de Juros Real e Inflação Implícita Atual
+    # =======================================================
     col_a, col_b = st.columns(2)
     
     with col_a:
         st.subheader("3. Curva de Juros Real (NTN-B)")
-        fig_real = gerar_grafico_curva_juros_real_ntnb(df_tesouro)
-        st.plotly_chart(fig_real, use_container_width=True)
+        fig_curva_real = gerar_grafico_curva_juros_real_ntnb(df_tesouro)
+        st.plotly_chart(fig_curva_real, use_container_width=True, key="curva_real")
         
     with col_b:
         st.subheader("4. Inflação Implícita (Breakeven)")
         df_breakeven = calcular_inflacao_implicita(df_tesouro)
         if not df_breakeven.empty:
-            # Plota a curva atual
-            import plotly.graph_objects as go
             fig_be = go.Figure()
             fig_be.add_trace(go.Scatter(
                 x=df_breakeven['Anos até Vencimento'], 
@@ -100,46 +169,89 @@ def render():
                 name='Implícita',
                 line=dict(color='#FFB302')
             ))
-            fig_be.update_layout(title="Estrutura a Termo da Inflação Implícita", template='brokeberg', xaxis_title="Anos", yaxis_title="Inflação (%)")
-            st.plotly_chart(fig_be, use_container_width=True)
+            fig_be.update_layout(
+                title="Estrutura a Termo da Inflação Implícita", 
+                template='brokeberg', 
+                xaxis_title="Anos", 
+                yaxis_title="Inflação (%)",
+                title_x=0
+            )
+            st.plotly_chart(fig_be, use_container_width=True, key="breakeven_atual")
         else:
             st.info("Não foi possível calcular a curva de inflação implícita.")
 
-    # --- Histórico de Breakeven ---
+    st.markdown("---")
+
+    # =======================================================
+    # 5. Histórico de Breakeven (5y e 10y) - CORRIGIDO
+    # =======================================================
     st.subheader("5. Histórico da Inflação Implícita (5y e 10y)")
-    with st.spinner("Calculando histórico de breakeven... (isso pode levar alguns segundos)"):
-        # Cache this if slow
+    st.caption("Breakeven de inflação calculado a partir de pares NTN-F e NTN-B.")
+    
+    with st.spinner("Calculando histórico de breakeven..."):
         df_be_hist = calcular_breakeven_historico(df_tesouro)
-        fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist)
-        st.plotly_chart(fig_be_hist, use_container_width=True)
+        
+        if not df_be_hist.empty:
+            # Verificar se temos dados para ambas as séries
+            cols_disponiveis = [c for c in df_be_hist.columns if df_be_hist[c].notna().sum() > 10]
+            
+            if len(cols_disponiveis) >= 2:
+                fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist)
+                st.plotly_chart(fig_be_hist, use_container_width=True, key="breakeven_hist")
+            elif len(cols_disponiveis) == 1:
+                # Só uma série disponível
+                st.warning(f"Apenas {cols_disponiveis[0]} disponível. Dados insuficientes para a outra série.")
+                fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist[[cols_disponiveis[0]]])
+                st.plotly_chart(fig_be_hist, use_container_width=True, key="breakeven_hist_single")
+            else:
+                st.warning("Dados insuficientes para calcular breakeven histórico.")
+                
+            # Mostrar estatísticas
+            with st.expander("📊 Estatísticas do Breakeven"):
+                for col in cols_disponiveis:
+                    serie = df_be_hist[col].dropna()
+                    if len(serie) > 0:
+                        st.markdown(f"**{col}:** Atual: {serie.iloc[-1]:.2f}% | Média: {serie.mean():.2f}% | Mín: {serie.min():.2f}% | Máx: {serie.max():.2f}%")
+        else:
+            st.warning("Não foi possível calcular o histórico de breakeven.")
 
     st.markdown("---")
 
-    # --- Spread de Juros e Heatmap ---
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.subheader("Spread NTN-F 10y vs 2y")
-        fig_spread = gerar_grafico_spread_juros(df_tesouro)
-        st.plotly_chart(fig_spread, use_container_width=True)
+    # =======================================================
+    # 6. Spread NTN-F 10y vs 2y
+    # =======================================================
+    st.subheader("6. Spread NTN-F 10y vs 2y")
+    st.caption("Diferença entre taxas prefixadas longas e curtas - indica inclinação da curva.")
+    fig_spread = gerar_grafico_spread_juros(df_tesouro)
+    st.plotly_chart(fig_spread, use_container_width=True, key="spread_juros")
 
-    with c2:
-        st.subheader("Heatmap da Curva Prefixada")
-        st.caption("Variação (bps) nos últimos 5 dias")
-        df_diff = calcular_variacao_curva(df_tesouro)
-        fig_heat = gerar_heatmap_variacao_curva(df_diff)
-        st.plotly_chart(fig_heat, use_container_width=True)
-        
     st.markdown("---")
+
+    # =======================================================
+    # 7. Análise de Títulos Específicos
+    # =======================================================
+    st.subheader("7. Histórico de Taxas por Vencimento")
     
-    # --- ETTJ Curto e Longo Prazo ---
-    st.subheader("Dinâmica da Curva Prefixada (ETTJ)")
-    t1, t2 = st.tabs(["Curto Prazo (Dias)", "Longo Prazo (Meses)"])
+    tipos_disponiveis = df_tesouro['Tipo Titulo'].dropna().unique().tolist()
+    tipo_selecionado = st.selectbox(
+        "Selecione o Tipo de Título", 
+        tipos_disponiveis, 
+        index=tipos_disponiveis.index('Tesouro IPCA+') if 'Tesouro IPCA+' in tipos_disponiveis else 0,
+        key="tipo_titulo_select"
+    )
     
-    with t1:
-        fig_curto = gerar_grafico_ettj_generico(df_tesouro, 'Tesouro Prefixado', 'Curva Prefixada - Curto Prazo')
-        st.plotly_chart(fig_curto, use_container_width=True)
-        
-    with t2:
-        fig_longo = gerar_grafico_ettj_generico(df_tesouro, 'Tesouro Prefixado', 'Curva Prefixada - Histórico')
-        st.plotly_chart(fig_longo, use_container_width=True)
+    df_tipo = df_tesouro[df_tesouro['Tipo Titulo'] == tipo_selecionado]
+    vencimentos_disponiveis = sorted(df_tipo['Data Vencimento'].unique())
+    
+    vencimentos_selecionados = st.multiselect(
+        "Selecione os Vencimentos", 
+        vencimentos_disponiveis,
+        default=[vencimentos_disponiveis[-1]] if vencimentos_disponiveis else [],
+        format_func=lambda x: x.strftime('%d/%m/%Y'),
+        key="vencimentos_select"
+    )
+    
+    metrica = st.radio("Métrica", ['Taxa Compra Manha', 'PU Compra Manha'], horizontal=True, key="metrica_radio")
+    
+    fig_multiplo = gerar_grafico_ntnb_multiplos_vencimentos(df_tipo, vencimentos_selecionados, metrica)
+    st.plotly_chart(fig_multiplo, use_container_width=True, key="titulos_especificos")
