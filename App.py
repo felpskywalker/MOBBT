@@ -80,30 +80,7 @@ if not check_password():
 
 # Se chegou aqui, está autenticado!
 
-# Importar Páginas
-try:
-    from src.pages import (
-        dashboard_tesouro,
-        credito_privado,
-        market_breadth,
-        economicos_br,
-        dashboard_commodities,
-        dashboard_internacional,
-        acoes_br,
-        radar_insiders,
-        calculadora_put,
-        screener_put,
-        exportador_dfp,
-        volatilidade_iv,
-        minha_carteira
-    )
-except Exception as e:
-    st.error(f"❌ Erro fatal ao carregar módulos das páginas: {e}")
-    import traceback
-    st.code(traceback.format_exc(), language="python")
-    st.stop()
-
-# --- Sidebar Nuvegação ---
+# --- Sidebar Navegação ---
 with st.sidebar:
     st.title("Brokeberg Terminal")
     st.caption(f"Bem-vindo, **{st.session_state.get('name', 'Usuário')}**!")
@@ -181,40 +158,53 @@ if pagina_selecionada == "Início":
     """)
 
 elif pagina_selecionada == "Juros Brasil":
+    from src.pages import dashboard_tesouro
     dashboard_tesouro.render()
 
 elif pagina_selecionada == "Crédito Privado":
+    from src.pages import credito_privado
     credito_privado.render()
 
 elif pagina_selecionada == "Amplitude":
+    from src.pages import market_breadth
     market_breadth.render()
 
 elif pagina_selecionada == "Volatilidade IV":
+    from src.pages import volatilidade_iv
     volatilidade_iv.render()
 
 elif pagina_selecionada == "Econômicos BR":
+    from src.pages import economicos_br
     economicos_br.render()
 
 elif pagina_selecionada == "Commodities":
+    from src.pages import dashboard_commodities
     dashboard_commodities.render()
 
 elif pagina_selecionada == "Internacional":
+    from src.pages import dashboard_internacional
     dashboard_internacional.render()
 
 elif pagina_selecionada == "Ações BR":
+    from src.pages import acoes_br
     acoes_br.render()
 
 elif pagina_selecionada == "Radar de Insiders":
+    from src.pages import radar_insiders
     radar_insiders.render()
 
 elif pagina_selecionada == "Calculadora Put":
+    from src.pages import calculadora_put
     calculadora_put.render()
 
 elif pagina_selecionada == "Screener Put":
+    from src.pages import screener_put
     screener_put.render()
 
 elif pagina_selecionada == "Exportador DFP":
+    from src.pages import exportador_dfp
     exportador_dfp.render()
 
 elif pagina_selecionada == "Minha Carteira":
+    from src.pages import minha_carteira
     minha_carteira.render()
