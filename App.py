@@ -101,7 +101,6 @@ with st.sidebar:
             "Crédito Privado",
             "Amplitude",
             "Volatilidade IV",
-            "Correlações",
             "Calendário",
             "Econômicos BR",
             "Commodities",
@@ -120,7 +119,6 @@ with st.sidebar:
             "wallet2",
             "water",
             "activity",
-            "diagram-3",
             "calendar-event",
             "bar-chart-line-fill",
             "box-seam",
@@ -179,10 +177,6 @@ elif pagina_selecionada == "Amplitude":
 elif pagina_selecionada == "Volatilidade IV":
     from src.pages import volatilidade_iv
     volatilidade_iv.render()
-
-elif pagina_selecionada == "Correlações":
-    from src.pages import correlacoes_regime
-    correlacoes_regime.render()
 
 elif pagina_selecionada == "Calendário":
     from src.pages import event_calendar
