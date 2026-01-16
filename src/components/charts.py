@@ -113,7 +113,16 @@ def gerar_grafico_breakeven_historico(df_breakeven):
          return go.Figure().update_layout(title_text="Sem dados para histórico de inflação implícita.", template='brokeberg')
 
     fig = go.Figure()
-    cores = {'Breakeven 5y': '#FFA726', 'Breakeven 10y': '#EF5350'}
+    
+    # Cores para diferentes séries
+    cores = {
+        'Breakeven 5y': '#FFA726', 
+        'Breakeven 10y': '#EF5350',
+        'Breakeven Curto': '#FFA726',  # Laranja
+        'Breakeven Longo': '#EF5350',  # Vermelho
+        'Breakeven 3y': '#FFA726',
+        'Breakeven 2y': '#FFA726',
+    }
     
     for col in df_breakeven.columns:
         fig.add_trace(go.Scatter(
@@ -121,11 +130,12 @@ def gerar_grafico_breakeven_historico(df_breakeven):
             y=df_breakeven[col], 
             name=col, 
             mode='lines',
-            connectgaps=False, 
+            connectgaps=True,  # Conectar gaps para melhor visualização
             line=dict(color=cores.get(col, '#CCCCCC'), width=2)
         ))
 
     fig.add_hline(y=3.0, line_dash="dot", line_color="gray", annotation_text="Meta 3%", annotation_position="top left")
+    fig.add_hline(y=4.5, line_dash="dot", line_color="rgba(255,180,0,0.3)", annotation_text="Média histórica ~4.5%", annotation_position="bottom right")
 
     fig.update_layout(
         title='Histórico de Inflação Implícita (Breakeven)',

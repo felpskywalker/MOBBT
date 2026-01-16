@@ -183,35 +183,30 @@ def render():
     st.markdown("---")
 
     # =======================================================
-    # 5. Histórico de Breakeven (5y e 10y) - CORRIGIDO
+    # 5. Histórico de Breakeven - Inflação Implícita
     # =======================================================
-    st.subheader("5. Histórico da Inflação Implícita (5y e 10y)")
-    st.caption("Breakeven de inflação calculado a partir de pares NTN-F e NTN-B.")
+    st.subheader("5. Histórico da Inflação Implícita (Breakeven)")
+    st.caption("Breakeven = Taxa Prefixada - Taxa Real (IPCA+). Calcula a inflação esperada pelo mercado.")
     
     with st.spinner("Calculando histórico de breakeven..."):
         df_be_hist = calcular_breakeven_historico(df_tesouro)
         
-        if not df_be_hist.empty:
-            # Verificar se temos dados para ambas as séries
+        if not df_be_hist.empty and len(df_be_hist.columns) > 0:
+            # Verificar se temos dados suficientes
             cols_disponiveis = [c for c in df_be_hist.columns if df_be_hist[c].notna().sum() > 10]
             
-            if len(cols_disponiveis) >= 2:
-                fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist)
+            if cols_disponiveis:
+                fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist[cols_disponiveis])
                 st.plotly_chart(fig_be_hist, use_container_width=True, key="breakeven_hist")
-            elif len(cols_disponiveis) == 1:
-                # Só uma série disponível
-                st.warning(f"Apenas {cols_disponiveis[0]} disponível. Dados insuficientes para a outra série.")
-                fig_be_hist = gerar_grafico_breakeven_historico(df_be_hist[[cols_disponiveis[0]]])
-                st.plotly_chart(fig_be_hist, use_container_width=True, key="breakeven_hist_single")
+                
+                # Mostrar estatísticas
+                with st.expander("📊 Estatísticas do Breakeven"):
+                    for col in cols_disponiveis:
+                        serie = df_be_hist[col].dropna()
+                        if len(serie) > 0:
+                            st.markdown(f"**{col}:** Atual: {serie.iloc[-1]:.2f}% | Média: {serie.mean():.2f}% | Mín: {serie.min():.2f}% | Máx: {serie.max():.2f}%")
             else:
                 st.warning("Dados insuficientes para calcular breakeven histórico.")
-                
-            # Mostrar estatísticas
-            with st.expander("📊 Estatísticas do Breakeven"):
-                for col in cols_disponiveis:
-                    serie = df_be_hist[col].dropna()
-                    if len(serie) > 0:
-                        st.markdown(f"**{col}:** Atual: {serie.iloc[-1]:.2f}% | Média: {serie.mean():.2f}% | Mín: {serie.min():.2f}% | Máx: {serie.max():.2f}%")
         else:
             st.warning("Não foi possível calcular o histórico de breakeven.")
 
