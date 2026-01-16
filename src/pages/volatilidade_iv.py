@@ -385,6 +385,14 @@ def render_term_structure():
                                        help="Digite o preço manualmente se o Yahoo estiver bloqueando")
     
     if term_asset:
+        # Inicialização de variáveis de estado para renderização
+        df_term = pd.DataFrame()
+        asset_price = 0.0
+        selic = 0.0
+        error_msg = None
+        trace_msg = None
+        warning_msg = None
+
         with st.spinner(f"Buscando opções ATM de {term_asset} na B3..."):
             try:
                 if manual_price > 0:
@@ -392,50 +400,58 @@ def render_term_structure():
                 else:
                     asset_price = get_asset_price_yesterday(term_asset)
                     if asset_price == 0.0:
-                        st.warning(f"⚠️ Não foi possível obter o preço. Digite o preço de {term_asset} manualmente.")
-                
-                selic = get_selic_annual()
+                        warning_msg = f"⚠️ Não foi possível obter o preço. Digite o preço de {term_asset} manualmente."
                 
                 if asset_price > 0:
+                    selic = get_selic_annual()
                     df_term = calcular_term_structure(term_asset, asset_price, selic, num_vencimentos=6)
                     
-                    if not df_term.empty:
-                        with st.container():
-                            col_chart, col_info = st.columns([3, 1])
-                            
-                            with col_chart:
-                                st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
-                        
-                        with col_info:
-                            st.metric("Preço Atual", f"R$ {asset_price:.2f}")
-                            st.metric("Selic Anual", f"{selic:.2f}%")
-                            
-                            if len(df_term) >= 2:
-                                slope = (df_term['iv'].iloc[-1] - df_term['iv'].iloc[0]) / \
-                                       (df_term['days_to_exp'].iloc[-1] - df_term['days_to_exp'].iloc[0])
-                                if slope > 0.01:
-                                    st.success("📈 **CONTANGO** - Curva normal")
-                                elif slope < -0.01:
-                                    st.error("📉 **BACKWARDATION** - Stress")
-                                else:
-                                    st.info("➡️ **FLAT** - Curva plana")
-                                
-                                st.metric("IV Curto Prazo", f"{df_term['iv'].iloc[0]:.1f}%")
-                                st.metric("IV Longo Prazo", f"{df_term['iv'].iloc[-1]:.1f}%")
-                        
-                            with st.expander("📋 Detalhes por Vencimento"):
-                                df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
-                                df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
-                                df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                                st.dataframe(df_display, hide_index=True, use_container_width=True, key="term_struct_df")
-                    else:
-                        st.warning(f"Não foram encontradas opções ATM com liquidez para {term_asset}.")
-                else:
-                    st.error(f"Não foi possível obter o preço de {term_asset}")
+                    if df_term.empty:
+                         warning_msg = f"Não foram encontradas opções ATM com liquidez para {term_asset}."
+                elif not warning_msg: # Se asset_price <= 0 e não temos msg de erro específica anterior
+                    error_msg = f"Não foi possível obter o preço de {term_asset}"
+
             except Exception as e:
-                with st.container():
-                     st.error(f"Erro ao calcular Term Structure: {e}")
-                     st.code(traceback.format_exc(), language="python")
+                error_msg = f"Erro ao calcular Term Structure: {e}"
+                trace_msg = traceback.format_exc()
+
+        # Renderização da UI (FORA do spinner)
+        if error_msg:
+            with st.container():
+                st.error(error_msg)
+                if trace_msg:
+                    st.code(trace_msg, language="python")
+        elif warning_msg:
+            st.warning(warning_msg)
+        elif not df_term.empty:
+            with st.container():
+                col_chart, col_info = st.columns([3, 1])
+                
+                with col_chart:
+                    st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
+                
+                with col_info:
+                    st.metric("Preço Atual", f"R$ {asset_price:.2f}")
+                    st.metric("Selic Anual", f"{selic:.2f}%")
+                    
+                    if len(df_term) >= 2:
+                        slope = (df_term['iv'].iloc[-1] - df_term['iv'].iloc[0]) / \
+                               (df_term['days_to_exp'].iloc[-1] - df_term['days_to_exp'].iloc[0])
+                        if slope > 0.01:
+                            st.success("📈 **CONTANGO** - Curva normal")
+                        elif slope < -0.01:
+                            st.error("📉 **BACKWARDATION** - Stress")
+                        else:
+                            st.info("➡️ **FLAT** - Curva plana")
+                        
+                        st.metric("IV Curto Prazo", f"{df_term['iv'].iloc[0]:.1f}%")
+                        st.metric("IV Longo Prazo", f"{df_term['iv'].iloc[-1]:.1f}%")
+                
+                with st.expander("📋 Detalhes por Vencimento"):
+                    df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
+                    df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
+                    df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                    st.dataframe(df_display, hide_index=True, use_container_width=True, key="term_struct_df")
     
     st.markdown("---")
 
@@ -485,6 +501,16 @@ def render_volatility_skew():
                                             key="skew_manual_price", help="Digite o preço se Yahoo bloqueando")
     
     if skew_asset:
+        # Inicialização de variáveis
+        df_skew = pd.DataFrame()
+        asset_price = 0.0
+        days_to_exp = 0
+        expiry = date.today() # Inicialização dummy
+        error_msg = None
+        trace_msg = None
+        warning_msg = None
+        skew_valid = False
+
         with st.spinner(f"Buscando opções de {skew_asset} para análise de Skew..."):
             try:
                 if skew_manual_price > 0:
@@ -492,11 +518,10 @@ def render_volatility_skew():
                 else:
                     asset_price = get_asset_price_yesterday(skew_asset)
                     if asset_price == 0.0:
-                        st.warning(f"⚠️ Não foi possível obter o preço. Digite o preço manualmente.")
-                
-                selic = get_selic_annual()
+                        warning_msg = f"⚠️ Não foi possível obter o preço. Digite o preço manualmente."
                 
                 if asset_price > 0:
+                    selic = get_selic_annual()
                     current_date = date.today()
                     future_date = current_date + relativedelta(months=skew_months)
                     expiry = get_third_friday(future_date.year, future_date.month)
@@ -506,54 +531,64 @@ def render_volatility_skew():
                         df_skew = calcular_volatility_skew(skew_asset, asset_price, selic, expiry)
                         
                         if not df_skew.empty and len(df_skew) >= 3:
-                            with st.container():
-                                col_chart, col_info = st.columns([3, 1])
-                                
-                                with col_chart:
-                                    st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True, key="skew_chart")
-                            
-                            with col_info:
-                                st.metric("Preço Atual", f"R$ {asset_price:.2f}")
-                                st.metric("Vencimento", expiry.strftime('%d/%m/%Y'))
-                                st.metric("Dias até Venc.", f"{days_to_exp} dias")
-                                
-                                # Skew Ratio
-                                atm_iv = df_skew[df_skew['moneyness'].abs() < 1]['iv'].values
-                                otm_5_iv = df_skew[df_skew['moneyness'].between(-6, -4)]['iv'].values
-                                
-                                if len(atm_iv) > 0 and len(otm_5_iv) > 0:
-                                    skew_ratio = otm_5_iv[0] / atm_iv[0]
-                                    if skew_ratio >= 1.20:
-                                        st.error(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                        st.caption("⚠️ Proteção muito cara")
-                                    elif skew_ratio >= 1.10:
-                                        st.warning(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                        st.caption("📊 Demanda moderada")
-                                    elif skew_ratio >= 1.00:
-                                        st.success(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                        st.caption("✅ Skew normal")
-                                    else:
-                                        st.info(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                        st.caption("🔵 Proteção barata")
-                            
-                                with st.expander("📋 Detalhes por Strike"):
-                                    df_display = df_skew[['strike', 'moneyness', 'iv', 'option_ticker', 'option_price']].copy()
-                                    df_display.columns = ['Strike', 'Moneyness (%)', 'IV (%)', 'Ticker Opção', 'Prêmio (R$)']
-                                    df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}")
-                                    df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
-                                    df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
-                                    df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
-                                    st.dataframe(df_display, hide_index=True, use_container_width=True, key="skew_df")
+                            skew_valid = True
                         else:
-                            st.warning(f"Poucos dados disponíveis para {skew_asset}.")
+                            warning_msg = f"Poucos dados disponíveis para {skew_asset}."
                     else:
-                        st.error("Vencimento inválido (já passou)")
-                else:
-                    st.error(f"Não foi possível obter o preço de {skew_asset}")
+                         error_msg = "Vencimento inválido (já passou)"
+                elif not warning_msg:
+                     error_msg = f"Não foi possível obter o preço de {skew_asset}"
             except Exception as e:
-                with st.container():
-                    st.error(f"Erro ao calcular Volatility Skew: {e}")
-                    st.code(traceback.format_exc(), language="python")
+                 error_msg = f"Erro ao calcular Volatility Skew: {e}"
+                 trace_msg = traceback.format_exc()
+        
+        # Renderização UI (FORA do spinner)
+        if error_msg:
+             with st.container():
+                st.error(error_msg)
+                if trace_msg:
+                    st.code(trace_msg, language="python")
+        elif warning_msg:
+            st.warning(warning_msg)
+        elif skew_valid:
+            with st.container():
+                col_chart, col_info = st.columns([3, 1])
+                
+                with col_chart:
+                    st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True, key="skew_chart")
+                
+                with col_info:
+                    st.metric("Preço Atual", f"R$ {asset_price:.2f}")
+                    st.metric("Vencimento", expiry.strftime('%d/%m/%Y'))
+                    st.metric("Dias até Venc.", f"{days_to_exp} dias")
+                    
+                    # Skew Ratio
+                    atm_iv = df_skew[df_skew['moneyness'].abs() < 1]['iv'].values
+                    otm_5_iv = df_skew[df_skew['moneyness'].between(-6, -4)]['iv'].values
+                    
+                    if len(atm_iv) > 0 and len(otm_5_iv) > 0:
+                        skew_ratio = otm_5_iv[0] / atm_iv[0]
+                        if skew_ratio >= 1.20:
+                            st.error(f"**Skew Ratio**: {skew_ratio:.2f}")
+                            st.caption("⚠️ Proteção muito cara")
+                        elif skew_ratio >= 1.10:
+                            st.warning(f"**Skew Ratio**: {skew_ratio:.2f}")
+                            st.caption("📊 Demanda moderada")
+                        elif skew_ratio >= 1.00:
+                            st.success(f"**Skew Ratio**: {skew_ratio:.2f}")
+                            st.caption("✅ Skew normal")
+                        else:
+                            st.info(f"**Skew Ratio**: {skew_ratio:.2f}")
+                            st.caption("🔵 Proteção barata")
+                
+                with st.expander("📋 Detalhes por Strike"):
+                    df_display = df_skew[['strike', 'moneyness', 'iv', 'option_ticker', 'option_price']].copy()
+                    df_display.columns = ['Strike', 'Moneyness (%)', 'IV (%)', 'Ticker Opção', 'Prêmio (R$)']
+                    df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}")
+                    df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
+                    df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
+                    df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
+                    st.dataframe(df_display, hide_index=True, use_container_width=True, key="skew_df")
     
     st.markdown("---")
 
