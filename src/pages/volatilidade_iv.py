@@ -377,10 +377,11 @@ def render_term_structure():
     # Inputs
     col_term1, col_term2, col_term3 = st.columns([1, 1, 2])
     with col_term1:
-        term_asset = st.text_input("Ativo para Term Structure", value="BOVA11",
+        term_asset = st.text_input("Ativo para Term Structure", value="BOVA11", key="term_struct_asset_input",
                                    help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
     with col_term2:
         manual_price = st.number_input("Preço Manual (opcional)", value=0.0, min_value=0.0, step=0.01,
+                                       key="term_struct_price_input",
                                        help="Digite o preço manualmente se o Yahoo estiver bloqueando")
     
     if term_asset:
@@ -474,7 +475,7 @@ def render_volatility_skew():
         skew_asset = st.text_input("Ativo para Skew Analysis", value="BOVA11", key="skew_asset",
                                    help="Digite o ticker do ativo")
     with col2:
-        skew_months = st.selectbox("Vencimento", options=[1, 2, 3], index=0,
+        skew_months = st.selectbox("Vencimento", options=[1, 2, 3], index=0, key="skew_month_select",
                                    format_func=lambda x: f"{x} mês" if x == 1 else f"{x} meses",
                                    help="Selecione o vencimento")
     with col3:
