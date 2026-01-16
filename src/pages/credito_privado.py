@@ -1,5 +1,6 @@
 
 import streamlit as st
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from src.data_loaders.idex import carregar_dados_idex, carregar_dados_idex_infra
@@ -130,16 +131,29 @@ def render():
         "Valores abaixo de 100% indicam negociação com desconto; acima de 100%, com prêmio."
     )
     
-    col1, col2 = st.columns([2, 1])
+    scraper = DebenturesScraper()
     
-    with col1:
-        ticker_debenture = st.text_input(
-            "Ticker da Debênture",
-            placeholder="Ex: BRKM21, VALE25, PETR12",
-            help="Digite o código do ativo conforme listado na ANBIMA/B3"
-        ).strip().upper()
+    # Carregar lista de emissores/ativos recentes (cache para sessão)
+    if 'debentures_recentes' not in st.session_state:
+        with st.spinner("Carregando lista de debêntures recentes..."):
+            df_recentes = scraper.get_precos_ultimos_dias(dias=60)
+            if not df_recentes.empty:
+                emissores = sorted(df_recentes['Emissor'].unique().tolist())
+                ativos_por_emissor = df_recentes.groupby('Emissor')['Código do Ativo'].apply(lambda x: sorted(x.unique().tolist())).to_dict()
+                st.session_state['debentures_recentes'] = {
+                    'emissores': emissores,
+                    'ativos_por_emissor': ativos_por_emissor,
+                    'todos_ativos': sorted(df_recentes['Código do Ativo'].unique().tolist())
+                }
+            else:
+                st.session_state['debentures_recentes'] = {'emissores': [], 'ativos_por_emissor': {}, 'todos_ativos': []}
     
-    with col2:
+    dados_recentes = st.session_state['debentures_recentes']
+    
+    # Linha 1: Período e Filtro Emissor
+    col_periodo, col_emissor = st.columns([1, 2])
+    
+    with col_periodo:
         periodo_dias = st.selectbox(
             "Período",
             options=[30, 90, 180, 365, 730, 1825, 3650],
@@ -152,89 +166,153 @@ def render():
                 1825: "5 anos",
                 3650: "Máximo (10 anos)"
             }.get(x, f"{x} dias"),
-            index=6  # Default: Máximo
+            index=6
         )
     
-    if ticker_debenture:
-        with st.spinner(f"Buscando dados de {ticker_debenture}..."):
-            scraper = DebenturesScraper()
-            df_debenture = scraper.get_precos_por_ativo(ticker_debenture, dias=periodo_dias)
+    with col_emissor:
+        emissor_selecionado = st.selectbox(
+            "Filtrar por Emissor (opcional)",
+            options=["Todos"] + dados_recentes.get('emissores', []),
+            index=0,
+            help="Filtre para ver apenas debêntures de um emissor específico"
+        )
+    
+    # Determinar lista de ativos disponíveis
+    if emissor_selecionado == "Todos":
+        ativos_disponiveis = dados_recentes.get('todos_ativos', [])
+    else:
+        ativos_disponiveis = dados_recentes.get('ativos_por_emissor', {}).get(emissor_selecionado, [])
+    
+    # Linha 2: Seleção de Debêntures (multiselect)
+    col_select, col_manual = st.columns([3, 1])
+    
+    with col_select:
+        tickers_selecionados = st.multiselect(
+            "Selecione Debêntures",
+            options=ativos_disponiveis,
+            default=[],
+            help="Selecione uma ou mais debêntures para comparar"
+        )
+    
+    with col_manual:
+        ticker_manual = st.text_input(
+            "Ou digite manualmente",
+            placeholder="Ex: BRKM21",
+            help="Digite um ticker não listado"
+        ).strip().upper()
+    
+    # Combinar seleções
+    todos_tickers = list(set(tickers_selecionados + ([ticker_manual] if ticker_manual else [])))
+    
+    if todos_tickers:
+        # Buscar dados de todas as debêntures selecionadas
+        with st.spinner(f"Buscando dados de {len(todos_tickers)} debênture(s)..."):
+            dfs = []
+            for ticker in todos_tickers:
+                df_ticker = scraper.get_precos_por_ativo(ticker, dias=periodo_dias)
+                if not df_ticker.empty:
+                    dfs.append(df_ticker)
+            
+            if dfs:
+                df_combined = pd.concat(dfs, ignore_index=True)
+            else:
+                df_combined = pd.DataFrame()
         
-        if not df_debenture.empty:
-            # Gráfico do % PU da Curva
+        if not df_combined.empty:
+            # Gráfico do % PU da Curva (múltiplas séries)
             st.plotly_chart(
-                gerar_grafico_pu_curva(df_debenture),
+                gerar_grafico_pu_curva(df_combined),
                 use_container_width=True,
                 key="chart_pu_curva"
             )
             
-            # Métricas resumo
-            df_valid = df_debenture.dropna(subset=['% PU da Curva'])
-            if not df_valid.empty:
-                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                ultimo_pu = df_valid.iloc[-1]['% PU da Curva']
-                media_pu = df_valid['% PU da Curva'].mean()
-                min_pu = df_valid['% PU da Curva'].min()
-                max_pu = df_valid['% PU da Curva'].max()
+            # Métricas e características apenas para seleção única
+            if len(todos_tickers) == 1:
+                ticker_unico = todos_tickers[0]
+                df_valid = df_combined.dropna(subset=['% PU da Curva'])
                 
-                with col_m1:
-                    st.metric("Último % PU", f"{ultimo_pu:.2f}%", delta=f"{ultimo_pu - 100:.2f}%")
-                with col_m2:
-                    st.metric("Média", f"{media_pu:.2f}%")
-                with col_m3:
-                    st.metric("Mínimo", f"{min_pu:.2f}%")
-                with col_m4:
-                    st.metric("Máximo", f"{max_pu:.2f}%")
-                
-                # Características e Taxa Indicativa
-                st.markdown("#### 📋 Características e Taxa Indicativa")
-                with st.spinner("Buscando características..."):
-                    taxa_info = scraper.calcular_taxa_indicativa(ticker_debenture, ultimo_pu)
-                
-                if taxa_info.get('erro'):
-                    st.warning(f"Não foi possível obter características: {taxa_info['erro']}")
-                else:
-                    col_c1, col_c2, col_c3 = st.columns(3)
-                    with col_c1:
-                        st.metric("Tipo de Remuneração", taxa_info.get('tipo_remuneracao', 'N/D'))
-                    with col_c2:
-                        taxa_base = taxa_info.get('taxa_base')
-                        st.metric("Taxa/Spread Base", f"{taxa_base:.4f}%" if taxa_base else "N/D")
-                    with col_c3:
-                        taxa_ind = taxa_info.get('taxa_indicativa')
-                        st.metric(
-                            "Taxa Indicativa", 
-                            f"{taxa_ind:.4f}%" if taxa_ind else "N/D",
-                            help="Taxa ajustada pelo % PU da Curva atual"
+                if not df_valid.empty:
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                    ultimo_pu = df_valid.iloc[-1]['% PU da Curva']
+                    media_pu = df_valid['% PU da Curva'].mean()
+                    min_pu = df_valid['% PU da Curva'].min()
+                    max_pu = df_valid['% PU da Curva'].max()
+                    
+                    with col_m1:
+                        st.metric("Último % PU", f"{ultimo_pu:.2f}%", delta=f"{ultimo_pu - 100:.2f}%")
+                    with col_m2:
+                        st.metric("Média", f"{media_pu:.2f}%")
+                    with col_m3:
+                        st.metric("Mínimo", f"{min_pu:.2f}%")
+                    with col_m4:
+                        st.metric("Máximo", f"{max_pu:.2f}%")
+                    
+                    # Características e Taxa Indicativa
+                    st.markdown("#### 📋 Características e Taxa Indicativa")
+                    with st.spinner("Buscando características..."):
+                        taxa_info = scraper.calcular_taxa_indicativa(ticker_unico, ultimo_pu)
+                    
+                    if taxa_info.get('erro'):
+                        st.warning(f"Não foi possível obter características: {taxa_info['erro']}")
+                    else:
+                        col_c1, col_c2, col_c3 = st.columns(3)
+                        with col_c1:
+                            st.metric("Tipo de Remuneração", taxa_info.get('tipo_remuneracao', 'N/D'))
+                        with col_c2:
+                            taxa_base = taxa_info.get('taxa_base')
+                            st.metric("Taxa/Spread Base", f"{taxa_base:.4f}%" if taxa_base else "N/D")
+                        with col_c3:
+                            taxa_ind = taxa_info.get('taxa_indicativa')
+                            st.metric(
+                                "Taxa Indicativa", 
+                                f"{taxa_ind:.4f}%" if taxa_ind else "N/D",
+                                help="Taxa ajustada pelo % PU da Curva atual"
+                            )
+                        
+                        if taxa_info.get('descricao'):
+                            st.success(f"**Taxa Indicativa Atual:** {taxa_info['descricao']}")
+                        
+                        # Gráfico histórico de taxa indicativa
+                        st.plotly_chart(
+                            gerar_grafico_taxa_indicativa(
+                                df_valid, 
+                                taxa_info.get('tipo_remuneracao'),
+                                taxa_info.get('taxa_base')
+                            ),
+                            use_container_width=True,
+                            key="chart_taxa_indicativa"
                         )
-                    
-                    # Descrição completa
-                    if taxa_info.get('descricao'):
-                        st.success(f"**Taxa Indicativa Atual:** {taxa_info['descricao']}")
-                    
-                    # Gráfico histórico de taxa indicativa
-                    st.plotly_chart(
-                        gerar_grafico_taxa_indicativa(
-                            df_valid, 
-                            taxa_info.get('tipo_remuneracao'),
-                            taxa_info.get('taxa_base')
-                        ),
-                        use_container_width=True,
-                        key="chart_taxa_indicativa"
-                    )
+            else:
+                # Múltiplas debêntures - mostrar resumo em tabela
+                st.markdown("#### 📊 Resumo das Debêntures Selecionadas")
+                resumo_data = []
+                for ticker in todos_tickers:
+                    df_ticker = df_combined[df_combined['Código do Ativo'] == ticker].dropna(subset=['% PU da Curva'])
+                    if not df_ticker.empty:
+                        ultimo = df_ticker.iloc[-1]['% PU da Curva']
+                        emissor = df_ticker.iloc[-1].get('Emissor', 'N/D')
+                        resumo_data.append({
+                            'Ticker': ticker,
+                            'Emissor': emissor,
+                            'Último % PU': f"{ultimo:.2f}%",
+                            'Vs. Par': f"{ultimo - 100:+.2f}%"
+                        })
+                
+                if resumo_data:
+                    st.dataframe(pd.DataFrame(resumo_data), use_container_width=True, hide_index=True)
             
             # Tabela de dados
             with st.expander("📋 Ver dados brutos"):
                 st.dataframe(
-                    df_debenture[['Data', 'Emissor', 'Código do Ativo', 'PU Médio', '% PU da Curva', 'Quantidade', 'Número de Negócios']]
+                    df_combined[['Data', 'Emissor', 'Código do Ativo', 'PU Médio', '% PU da Curva', 'Quantidade', 'Número de Negócios']]
                     .sort_values('Data', ascending=False),
                     use_container_width=True,
                     hide_index=True
                 )
         else:
-            st.warning(f"Nenhum dado encontrado para '{ticker_debenture}' no período selecionado.")
+            st.warning(f"Nenhum dado encontrado para os tickers selecionados no período.")
     else:
-        st.caption("💡 Digite um ticker de debênture para visualizar o histórico.")
+        st.caption("💡 Selecione uma ou mais debêntures para visualizar o histórico.")
     
     st.markdown("---")
     
