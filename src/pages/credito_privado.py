@@ -66,6 +66,60 @@ def gerar_grafico_pu_curva(df):
     
     return fig
 
+def gerar_grafico_taxa_indicativa(df, tipo_remuneracao, taxa_base):
+    """Gera gráfico do histórico da taxa indicativa."""
+    if df.empty or '% PU da Curva' not in df.columns or taxa_base is None:
+        return go.Figure().update_layout(title_text="Sem dados para taxa indicativa.")
+    
+    df = df.dropna(subset=['% PU da Curva']).copy()
+    
+    if df.empty:
+        return go.Figure().update_layout(title_text="Sem dados válidos.")
+    
+    # Calcular taxa indicativa para cada ponto: taxa_base * (100 / % PU)
+    df['Taxa Indicativa'] = df['% PU da Curva'].apply(
+        lambda pu: taxa_base * (100 / pu) if pu > 0 else None
+    )
+    
+    df = df.dropna(subset=['Taxa Indicativa']).sort_values('Data')
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=df['Data'],
+        y=df['Taxa Indicativa'],
+        mode='lines+markers',
+        name='Taxa Indicativa',
+        marker=dict(size=6, color='#636EFA'),
+        line=dict(width=2, color='#636EFA'),
+        fill='tozeroy',
+        fillcolor='rgba(99, 110, 250, 0.1)',
+        hovertemplate='%{x|%d/%m/%Y}<br>%{y:.4f}%<extra></extra>'
+    ))
+    
+    # Linha de referência na taxa base
+    fig.add_hline(
+        y=taxa_base,
+        line_dash="dash",
+        line_color="green",
+        annotation_text=f"Taxa Base ({taxa_base:.4f}%)",
+        annotation_position="top right"
+    )
+    
+    titulo = f"Histórico da Taxa Indicativa ({tipo_remuneracao} + Spread)" if tipo_remuneracao else "Histórico da Taxa Indicativa"
+    
+    fig.update_layout(
+        title=titulo,
+        title_x=0,
+        xaxis_title='Data',
+        yaxis_title='Taxa Indicativa (%)',
+        template='brokeberg',
+        hovermode='x unified',
+        showlegend=False
+    )
+    
+    return fig
+
 def render():
     st.header("Crédito Privado")
     
@@ -155,6 +209,17 @@ def render():
                     # Descrição completa
                     if taxa_info.get('descricao'):
                         st.success(f"**Taxa Indicativa Atual:** {taxa_info['descricao']}")
+                    
+                    # Gráfico histórico de taxa indicativa
+                    st.plotly_chart(
+                        gerar_grafico_taxa_indicativa(
+                            df_valid, 
+                            taxa_info.get('tipo_remuneracao'),
+                            taxa_info.get('taxa_base')
+                        ),
+                        use_container_width=True,
+                        key="chart_taxa_indicativa"
+                    )
             
             # Tabela de dados
             with st.expander("📋 Ver dados brutos"):
