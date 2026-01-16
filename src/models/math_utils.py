@@ -203,16 +203,9 @@ def calcular_breakeven_historico(df_tesouro):
     
     df_result = pd.DataFrame(resultados).set_index('Data Base').sort_index()
     
-    # Renomear colunas para padronizar
-    rename_map = {}
-    for col in df_result.columns:
-        if '3y' in col or '2y' in col:
-            rename_map[col] = 'Breakeven Curto'
-        elif '5y' in col or '4y' in col:
-            rename_map[col] = 'Breakeven Longo'
-    
-    if rename_map:
-        df_result = df_result.rename(columns=rename_map)
+    # Consolidar colunas duplicadas (se houver) - manter apenas a primeira
+    if df_result.columns.duplicated().any():
+        df_result = df_result.loc[:, ~df_result.columns.duplicated()]
     
     return df_result
 
