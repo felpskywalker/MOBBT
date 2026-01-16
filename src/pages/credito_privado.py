@@ -142,15 +142,17 @@ def render():
     with col2:
         periodo_dias = st.selectbox(
             "Período",
-            options=[30, 90, 180, 365, 730],
+            options=[30, 90, 180, 365, 730, 1825, 3650],
             format_func=lambda x: {
                 30: "30 dias",
                 90: "3 meses",
                 180: "6 meses",
                 365: "1 ano",
-                730: "2 anos"
+                730: "2 anos",
+                1825: "5 anos",
+                3650: "Máximo (10 anos)"
             }.get(x, f"{x} dias"),
-            index=3
+            index=6  # Default: Máximo
         )
     
     if ticker_debenture:
