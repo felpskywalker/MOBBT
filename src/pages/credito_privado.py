@@ -67,33 +67,10 @@ def gerar_grafico_pu_curva(df):
     return fig
 
 def render():
-    st.header("IDEX JGP - Indicador de Crédito Privado (Spread/CDI)")
-    st.info(
-        "O IDEX-CDI mostra o spread médio (prêmio acima do CDI) exigido pelo mercado para comprar debêntures. "
-        "Filtramos emissores que passaram por eventos de crédito relevantes."
-    )
-    df_idex = carregar_dados_idex()
-    if not df_idex.empty:
-        st.plotly_chart(gerar_grafico_idex(df_idex), use_container_width=True, key="chart_idex")
-    else:
-        st.warning("Não foi possível carregar os dados do IDEX-CDI.")
-
-    st.markdown("---")
-
-    st.header("IDEX INFRA - Debêntures de Infraestrutura (Spread/NTN-B)")
-    st.info(
-        "O IDEX-INFRA mede o spread médio de debêntures incentivadas em relação aos títulos públicos de referência (NTN-Bs)."
-    )
-    df_idex_infra = carregar_dados_idex_infra()
-    if not df_idex_infra.empty:
-        st.plotly_chart(gerar_grafico_idex_infra(df_idex_infra), use_container_width=True, key="chart_idex_infra")
-    else:
-        st.warning("Não foi possível carregar os dados do IDEX INFRA.")
+    st.header("Crédito Privado")
     
-    st.markdown("---")
-    
-    # --- Seção de Histórico de Debêntures ---
-    st.header("📈 Histórico de Preços de Debêntures")
+    # --- Seção de Histórico de Debêntures (PRIMEIRO) ---
+    st.subheader("📈 Histórico de Preços de Debêntures")
     st.info(
         "Consulte o histórico do **% PU da Curva** de debêntures específicas. "
         "Valores abaixo de 100% indicam negociação com desconto; acima de 100%, com prêmio."
@@ -145,7 +122,6 @@ def render():
                 max_pu = df_valid['% PU da Curva'].max()
                 
                 with col_m1:
-                    delta_color = "normal" if ultimo_pu >= 100 else "inverse"
                     st.metric("Último % PU", f"{ultimo_pu:.2f}%", delta=f"{ultimo_pu - 100:.2f}%")
                 with col_m2:
                     st.metric("Média", f"{media_pu:.2f}%")
@@ -166,3 +142,33 @@ def render():
             st.warning(f"Nenhum dado encontrado para '{ticker_debenture}' no período selecionado.")
     else:
         st.caption("💡 Digite um ticker de debênture para visualizar o histórico.")
+    
+    st.markdown("---")
+    
+    # --- IDEX JGP (em expander, carrega sob demanda) ---
+    with st.expander("📊 IDEX JGP - Indicador de Crédito Privado (Spread/CDI)", expanded=False):
+        st.info(
+            "O IDEX-CDI mostra o spread médio (prêmio acima do CDI) exigido pelo mercado para comprar debêntures. "
+            "Filtramos emissores que passaram por eventos de crédito relevantes."
+        )
+        if st.button("Carregar IDEX-CDI", key="btn_idex_cdi"):
+            with st.spinner("Carregando dados do IDEX-CDI..."):
+                df_idex = carregar_dados_idex()
+            if not df_idex.empty:
+                st.plotly_chart(gerar_grafico_idex(df_idex), use_container_width=True, key="chart_idex")
+            else:
+                st.warning("Não foi possível carregar os dados do IDEX-CDI.")
+
+    # --- IDEX INFRA (em expander, carrega sob demanda) ---
+    with st.expander("📊 IDEX INFRA - Debêntures de Infraestrutura (Spread/NTN-B)", expanded=False):
+        st.info(
+            "O IDEX-INFRA mede o spread médio de debêntures incentivadas em relação aos títulos públicos de referência (NTN-Bs)."
+        )
+        if st.button("Carregar IDEX INFRA", key="btn_idex_infra"):
+            with st.spinner("Carregando dados do IDEX INFRA..."):
+                df_idex_infra = carregar_dados_idex_infra()
+            if not df_idex_infra.empty:
+                st.plotly_chart(gerar_grafico_idex_infra(df_idex_infra), use_container_width=True, key="chart_idex_infra")
+            else:
+                st.warning("Não foi possível carregar os dados do IDEX INFRA.")
+
