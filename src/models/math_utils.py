@@ -109,13 +109,10 @@ def calcular_variacao_curva(df_tesouro, dias_atras=5):
 
 def calcular_breakeven_historico(df_tesouro):
     """
-    Calcula o histórico do Breakeven de Inflação comparando:
-    - Taxa Prefixada (NTN-F / Tesouro Prefixado)
-    - Taxa Real (NTN-B / Tesouro IPCA+)
+    Calcula o histórico do Breakeven de Inflação.
+    Breakeven = (1 + Taxa Pré) / (1 + Taxa Real) - 1
     
-    Retorna breakeven para o maior prazo disponível em cada tipo.
-    Como NTN-F só vai até ~5 anos e NTN-B vai até 30+, calculamos apenas
-    o breakeven para prazos onde AMBOS existem.
+    Retorna duas séries fixas: Curto Prazo (~2-3 anos) e Médio Prazo (~4-5 anos)
     """
     # Prefixados (NTN-F)
     df_pre = df_tesouro[df_tesouro['Tipo Titulo'] == 'Tesouro Prefixado'].copy()
@@ -133,7 +130,12 @@ def calcular_breakeven_historico(df_tesouro):
     if not datas_comuns:
         return pd.DataFrame()
     
-    resultados = []
+    # ALVOS FIXOS: 2 anos (curto) e 5 anos (médio)
+    ALVO_CURTO = 2.5
+    ALVO_MEDIO = 5.0
+    
+    resultados_curto = {}
+    resultados_medio = {}
     
     for data in datas_comuns:
         data_dt = pd.to_datetime(data)
@@ -147,65 +149,62 @@ def calcular_breakeven_historico(df_tesouro):
         df_pre_dia['Anos'] = (df_pre_dia['Data Vencimento'] - data_dt).dt.days / 365.25
         df_ipca_dia['Anos'] = (df_ipca_dia['Data Vencimento'] - data_dt).dt.days / 365.25
         
-        # Filtrar títulos válidos (> 1 ano)
-        df_pre_dia = df_pre_dia[df_pre_dia['Anos'] > 1].sort_values('Anos')
-        df_ipca_dia = df_ipca_dia[df_ipca_dia['Anos'] > 1].sort_values('Anos')
+        # Filtrar títulos válidos (> 1 ano e < 10 anos)
+        df_pre_dia = df_pre_dia[(df_pre_dia['Anos'] > 1) & (df_pre_dia['Anos'] < 10)]
+        df_ipca_dia = df_ipca_dia[(df_ipca_dia['Anos'] > 1) & (df_ipca_dia['Anos'] < 10)]
         
         if df_pre_dia.empty or df_ipca_dia.empty:
             continue
         
-        row = {'Data Base': data_dt}
-        
-        # Pegar o título prefixado de prazo mais longo
-        max_pre = df_pre_dia['Anos'].max()
-        
-        # Definir alvos baseados no que está disponível
-        # Se prefixado máximo for ~5 anos, usamos 3y e 5y
-        # Se for mais curto, ajustamos
-        if max_pre >= 4:
-            alvos = [3, min(5, max_pre - 0.5)]
-        elif max_pre >= 2.5:
-            alvos = [2, max_pre - 0.5]
-        else:
-            alvos = [max_pre - 0.3] if max_pre > 1 else []
-        
-        for alvo_anos in alvos:
-            try:
-                # Encontrar título prefixado mais próximo do alvo
-                df_pre_dia['Dist'] = abs(df_pre_dia['Anos'] - alvo_anos)
-                idx_pre = df_pre_dia['Dist'].idxmin()
-                taxa_pre = df_pre_dia.loc[idx_pre, 'Taxa Compra Manha']
-                anos_pre = df_pre_dia.loc[idx_pre, 'Anos']
+        # Calcular breakeven para CURTO PRAZO (~2-3 anos)
+        try:
+            pre_curto = df_pre_dia.iloc[(df_pre_dia['Anos'] - ALVO_CURTO).abs().argsort()[:1]]
+            if not pre_curto.empty:
+                anos_pre = pre_curto['Anos'].iloc[0]
+                taxa_pre = pre_curto['Taxa Compra Manha'].iloc[0]
                 
-                # Encontrar título IPCA+ mais próximo do mesmo prazo
-                df_ipca_dia['Dist'] = abs(df_ipca_dia['Anos'] - anos_pre)
-                idx_ipca = df_ipca_dia['Dist'].idxmin()
-                taxa_ipca = df_ipca_dia.loc[idx_ipca, 'Taxa Compra Manha']
-                anos_ipca = df_ipca_dia.loc[idx_ipca, 'Anos']
-                
-                # Só calcula se os prazos forem razoavelmente próximos (até 1 ano de diferença)
-                if abs(anos_pre - anos_ipca) <= 1.0:
-                    # Fórmula do breakeven: (1 + Taxa Pré) / (1 + Taxa Real) - 1
-                    breakeven = (((1 + taxa_pre/100) / (1 + taxa_ipca/100)) - 1) * 100
+                ipca_match = df_ipca_dia.iloc[(df_ipca_dia['Anos'] - anos_pre).abs().argsort()[:1]]
+                if not ipca_match.empty:
+                    anos_ipca = ipca_match['Anos'].iloc[0]
+                    taxa_ipca = ipca_match['Taxa Compra Manha'].iloc[0]
                     
-                    # Nomear baseado no prazo real
-                    prazo_label = f"{int(round(alvo_anos))}y"
-                    row[f'Breakeven {prazo_label}'] = breakeven
-                    
-            except Exception:
-                continue
+                    if abs(anos_pre - anos_ipca) <= 1.5:
+                        be = (((1 + taxa_pre/100) / (1 + taxa_ipca/100)) - 1) * 100
+                        resultados_curto[data_dt] = be
+        except Exception:
+            pass
         
-        if len(row) > 1:  # Tem pelo menos um breakeven calculado
-            resultados.append(row)
+        # Calcular breakeven para MÉDIO PRAZO (~4-5 anos)
+        try:
+            pre_medio = df_pre_dia.iloc[(df_pre_dia['Anos'] - ALVO_MEDIO).abs().argsort()[:1]]
+            if not pre_medio.empty:
+                anos_pre = pre_medio['Anos'].iloc[0]
+                taxa_pre = pre_medio['Taxa Compra Manha'].iloc[0]
+                
+                # Só calcula se realmente tiver título próximo de 5 anos
+                if anos_pre >= 3.5:
+                    ipca_match = df_ipca_dia.iloc[(df_ipca_dia['Anos'] - anos_pre).abs().argsort()[:1]]
+                    if not ipca_match.empty:
+                        anos_ipca = ipca_match['Anos'].iloc[0]
+                        taxa_ipca = ipca_match['Taxa Compra Manha'].iloc[0]
+                        
+                        if abs(anos_pre - anos_ipca) <= 1.5:
+                            be = (((1 + taxa_pre/100) / (1 + taxa_ipca/100)) - 1) * 100
+                            resultados_medio[data_dt] = be
+        except Exception:
+            pass
     
-    if not resultados:
+    # Construir DataFrame
+    if not resultados_curto and not resultados_medio:
         return pd.DataFrame()
     
-    df_result = pd.DataFrame(resultados).set_index('Data Base').sort_index()
+    df_result = pd.DataFrame({
+        'Breakeven Curto (~2-3y)': pd.Series(resultados_curto),
+        'Breakeven Médio (~5y)': pd.Series(resultados_medio)
+    }).sort_index()
     
-    # Consolidar colunas duplicadas (se houver) - manter apenas a primeira
-    if df_result.columns.duplicated().any():
-        df_result = df_result.loc[:, ~df_result.columns.duplicated()]
+    # Remover colunas vazias
+    df_result = df_result.dropna(axis=1, how='all')
     
     return df_result
 

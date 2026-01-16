@@ -116,21 +116,22 @@ def gerar_grafico_breakeven_historico(df_breakeven):
     
     # Cores para diferentes séries
     cores = {
+        'Breakeven Curto (~2-3y)': '#FFA726',  # Laranja
+        'Breakeven Médio (~5y)': '#EF5350',    # Vermelho
         'Breakeven 5y': '#FFA726', 
         'Breakeven 10y': '#EF5350',
-        'Breakeven Curto': '#FFA726',  # Laranja
-        'Breakeven Longo': '#EF5350',  # Vermelho
-        'Breakeven 3y': '#FFA726',
-        'Breakeven 2y': '#FFA726',
     }
     
     for col in df_breakeven.columns:
+        # Usar .values para evitar problemas com Series
+        y_data = df_breakeven[col].values
+        
         fig.add_trace(go.Scatter(
             x=df_breakeven.index, 
-            y=df_breakeven[col], 
+            y=y_data, 
             name=col, 
             mode='lines',
-            connectgaps=True,  # Conectar gaps para melhor visualização
+            connectgaps=False,  # NÃO conectar gaps
             line=dict(color=cores.get(col, '#CCCCCC'), width=2)
         ))
 
