@@ -138,12 +138,14 @@ def render():
         with st.spinner("Carregando lista de debêntures recentes..."):
             df_recentes = scraper.get_precos_ultimos_dias(dias=60)
             if not df_recentes.empty:
-                emissores = sorted(df_recentes['Emissor'].unique().tolist())
-                ativos_por_emissor = df_recentes.groupby('Emissor')['Código do Ativo'].apply(lambda x: sorted(x.unique().tolist())).to_dict()
+                # Remover linhas com Emissor ou Código do Ativo nulos
+                df_recentes = df_recentes.dropna(subset=['Emissor', 'Código do Ativo'])
+                emissores = sorted([e for e in df_recentes['Emissor'].unique() if isinstance(e, str)])
+                ativos_por_emissor = df_recentes.groupby('Emissor')['Código do Ativo'].apply(lambda x: sorted([a for a in x.unique() if isinstance(a, str)])).to_dict()
                 st.session_state['debentures_recentes'] = {
                     'emissores': emissores,
                     'ativos_por_emissor': ativos_por_emissor,
-                    'todos_ativos': sorted(df_recentes['Código do Ativo'].unique().tolist())
+                    'todos_ativos': sorted([a for a in df_recentes['Código do Ativo'].unique() if isinstance(a, str)])
                 }
             else:
                 st.session_state['debentures_recentes'] = {'emissores': [], 'ativos_por_emissor': {}, 'todos_ativos': []}
