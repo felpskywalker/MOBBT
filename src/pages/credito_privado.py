@@ -129,6 +129,32 @@ def render():
                     st.metric("Mínimo", f"{min_pu:.2f}%")
                 with col_m4:
                     st.metric("Máximo", f"{max_pu:.2f}%")
+                
+                # Características e Taxa Indicativa
+                st.markdown("#### 📋 Características e Taxa Indicativa")
+                with st.spinner("Buscando características..."):
+                    taxa_info = scraper.calcular_taxa_indicativa(ticker_debenture, ultimo_pu)
+                
+                if taxa_info.get('erro'):
+                    st.warning(f"Não foi possível obter características: {taxa_info['erro']}")
+                else:
+                    col_c1, col_c2, col_c3 = st.columns(3)
+                    with col_c1:
+                        st.metric("Tipo de Remuneração", taxa_info.get('tipo_remuneracao', 'N/D'))
+                    with col_c2:
+                        taxa_base = taxa_info.get('taxa_base')
+                        st.metric("Taxa/Spread Base", f"{taxa_base:.4f}%" if taxa_base else "N/D")
+                    with col_c3:
+                        taxa_ind = taxa_info.get('taxa_indicativa')
+                        st.metric(
+                            "Taxa Indicativa", 
+                            f"{taxa_ind:.4f}%" if taxa_ind else "N/D",
+                            help="Taxa ajustada pelo % PU da Curva atual"
+                        )
+                    
+                    # Descrição completa
+                    if taxa_info.get('descricao'):
+                        st.success(f"**Taxa Indicativa Atual:** {taxa_info['descricao']}")
             
             # Tabela de dados
             with st.expander("📋 Ver dados brutos"):

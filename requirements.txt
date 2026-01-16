@@ -15,4 +15,5 @@ pandas_ta
 scipy
 requests
 supabase
+beautifulsoup4
 

@@ -4,14 +4,22 @@ Módulo para scraping de preços de debêntures do site debentures.com.br
 
 import pandas as pd
 import requests
+import re
 from datetime import datetime, timedelta
 from io import StringIO
+
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
 
 
 class DebenturesScraper:
     """Classe para fazer scraping de preços de debêntures."""
     
     BASE_URL = "https://www.debentures.com.br/exploreosnd/consultaadados/mercadosecundario"
+    CARACTERISTICAS_URL = "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp"
     DOWNLOAD_ENDPOINT = "/precosdenegociacao_e.asp"
     
     def __init__(self):
@@ -148,3 +156,124 @@ class DebenturesScraper:
         if df.empty or 'Código do Ativo' not in df.columns:
             return []
         return sorted(df['Código do Ativo'].unique().tolist())
+    
+    def get_caracteristicas(self, ticker: str) -> dict:
+        """
+        Busca características da debênture (Tipo de Remuneração, Taxa de Juros/Spread).
+        
+        Args:
+            ticker: Código do ativo (ex: RECV11, BRKM21)
+            
+        Returns:
+            Dict com tipo_remuneracao, taxa_juros, e taxa_indicativa_base
+        """
+        if not BS4_AVAILABLE:
+            return {
+                'ticker': ticker,
+                'tipo_remuneracao': None,
+                'taxa_juros': None,
+                'erro': 'BeautifulSoup não está instalado (pip install beautifulsoup4)'
+            }
+        
+        params = {
+            'tip_deb': 'publicas',
+            'selecao': ticker.upper()
+        }
+        
+        try:
+            response = self.session.get(self.CARACTERISTICAS_URL, params=params, timeout=30)
+            response.raise_for_status()
+            content = response.content.decode('latin-1')
+            
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            resultado = {
+                'ticker': ticker.upper(),
+                'tipo_remuneracao': None,
+                'taxa_juros': None,
+                'erro': None
+            }
+            
+            # Buscar Tipo de Remuneração
+            # Está após <b>Tipo de Remuneração:</b>
+            remun_label = soup.find('b', string=re.compile(r'Tipo de Remunera', re.IGNORECASE))
+            if remun_label:
+                # O texto está no mesmo td, após o label
+                td = remun_label.find_parent('td')
+                if td:
+                    texto = td.get_text(separator=' ', strip=True)
+                    # Extrair valor após "Tipo de Remuneração:"
+                    match = re.search(r'Tipo de Remunera[çc][aã]o:\s*(\S+)', texto, re.IGNORECASE)
+                    if match:
+                        resultado['tipo_remuneracao'] = match.group(1).strip()
+            
+            # Buscar Taxa de Juros/Spread
+            # Está numa tabela separada, na 3ª coluna da linha
+            taxa_label = soup.find('b', string=re.compile(r'Taxa de Juros/Spread', re.IGNORECASE))
+            if taxa_label:
+                tr = taxa_label.find_parent('tr')
+                if tr:
+                    tds = tr.find_all('td')
+                    if len(tds) >= 3:
+                        taxa_text = tds[2].get_text(strip=True)
+                        # Converter vírgula para ponto
+                        taxa_text = taxa_text.replace(',', '.')
+                        try:
+                            resultado['taxa_juros'] = float(taxa_text)
+                        except ValueError:
+                            resultado['taxa_juros'] = taxa_text
+            
+            return resultado
+            
+        except Exception as e:
+            return {
+                'ticker': ticker.upper(),
+                'tipo_remuneracao': None,
+                'taxa_juros': None,
+                'erro': str(e)
+            }
+    
+    def calcular_taxa_indicativa(self, ticker: str, pu_curva_percent: float) -> dict:
+        """
+        Calcula a taxa indicativa baseada no % PU da Curva e características.
+        
+        Para debêntures IPCA+:
+            Taxa Indicativa ≈ Taxa Base * (100 / % PU da Curva)
+            
+        Para debêntures CDI+:
+            Spread Indicativo ≈ Spread Base * (100 / % PU da Curva)
+        
+        Args:
+            ticker: Código do ativo
+            pu_curva_percent: % PU da Curva (ex: 98.5)
+            
+        Returns:
+            Dict com tipo, taxa_base, taxa_indicativa
+        """
+        carac = self.get_caracteristicas(ticker)
+        
+        if carac.get('erro') or carac.get('taxa_juros') is None:
+            return {
+                'ticker': ticker,
+                'erro': carac.get('erro', 'Não foi possível obter características'),
+                'taxa_indicativa': None
+            }
+        
+        tipo = carac['tipo_remuneracao']
+        taxa_base = carac['taxa_juros']
+        
+        # Fator de ajuste baseado no % PU
+        fator = 100 / pu_curva_percent if pu_curva_percent > 0 else 1
+        
+        taxa_indicativa = taxa_base * fator
+        
+        return {
+            'ticker': ticker,
+            'tipo_remuneracao': tipo,
+            'taxa_base': taxa_base,
+            'pu_curva_percent': pu_curva_percent,
+            'fator_ajuste': fator,
+            'taxa_indicativa': round(taxa_indicativa, 4),
+            'descricao': f"{tipo} + {taxa_indicativa:.4f}%" if tipo else f"{taxa_indicativa:.4f}%"
+        }
+
