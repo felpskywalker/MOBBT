@@ -404,7 +404,7 @@ def render_term_structure():
                             col_chart, col_info = st.columns([3, 1])
                             
                             with col_chart:
-                            st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
+                                st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
                         
                         with col_info:
                             st.metric("Preço Atual", f"R$ {asset_price:.2f}")
@@ -424,10 +424,10 @@ def render_term_structure():
                                 st.metric("IV Longo Prazo", f"{df_term['iv'].iloc[-1]:.1f}%")
                         
                             with st.expander("📋 Detalhes por Vencimento"):
-                            df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
-                            df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
-                            df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                            st.dataframe(df_display, hide_index=True, use_container_width=True, key="term_struct_df")
+                                df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
+                                df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
+                                df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                                st.dataframe(df_display, hide_index=True, use_container_width=True, key="term_struct_df")
                     else:
                         st.warning(f"Não foram encontradas opções ATM com liquidez para {term_asset}.")
                 else:
@@ -510,7 +510,7 @@ def render_volatility_skew():
                                 col_chart, col_info = st.columns([3, 1])
                                 
                                 with col_chart:
-                                st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True, key="skew_chart")
+                                    st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True, key="skew_chart")
                             
                             with col_info:
                                 st.metric("Preço Atual", f"R$ {asset_price:.2f}")
@@ -537,13 +537,13 @@ def render_volatility_skew():
                                         st.caption("🔵 Proteção barata")
                             
                                 with st.expander("📋 Detalhes por Strike"):
-                                df_display = df_skew[['strike', 'moneyness', 'iv', 'option_ticker', 'option_price']].copy()
-                                df_display.columns = ['Strike', 'Moneyness (%)', 'IV (%)', 'Ticker Opção', 'Prêmio (R$)']
-                                df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}")
-                                df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
-                                df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
-                                df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
-                                st.dataframe(df_display, hide_index=True, use_container_width=True, key="skew_df")
+                                    df_display = df_skew[['strike', 'moneyness', 'iv', 'option_ticker', 'option_price']].copy()
+                                    df_display.columns = ['Strike', 'Moneyness (%)', 'IV (%)', 'Ticker Opção', 'Prêmio (R$)']
+                                    df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}")
+                                    df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%")
+                                    df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%")
+                                    df_display['Prêmio (R$)'] = df_display['Prêmio (R$)'].apply(lambda x: f"R$ {x:.2f}")
+                                    st.dataframe(df_display, hide_index=True, use_container_width=True, key="skew_df")
                         else:
                             st.warning(f"Poucos dados disponíveis para {skew_asset}.")
                     else:
