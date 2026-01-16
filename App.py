@@ -108,6 +108,7 @@ with st.sidebar:
             "Radar de Insiders",
             "Calculadora Put",
             "Screener Put",
+            "Merger Arbitrage",
             "Exportador DFP",
             "Minha Carteira",
         ],
@@ -124,6 +125,7 @@ with st.sidebar:
             "person-check-fill",
             "calculator",
             "search",
+            "arrow-left-right",
             "file-earmark-spreadsheet",
             "bookmark-star",
         ],
@@ -200,6 +202,10 @@ elif pagina_selecionada == "Calculadora Put":
 elif pagina_selecionada == "Screener Put":
     from src.pages import screener_put
     screener_put.render()
+
+elif pagina_selecionada == "Merger Arbitrage":
+    from src.pages import merger_arbitrage
+    merger_arbitrage.render()
 
 elif pagina_selecionada == "Exportador DFP":
     from src.pages import exportador_dfp
