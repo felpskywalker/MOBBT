@@ -1,6 +1,7 @@
 
 import streamlit as st
 import yfinance as yf
+import numpy as np
 from datetime import date, datetime
 from src.models.put_utils import get_selic_annual
 
@@ -16,6 +17,15 @@ def get_current_price(ticker: str) -> float:
         return 0.0
     except Exception:
         return 0.0
+
+
+def calcular_dias_uteis(data_inicio: date, data_fim: date) -> int:
+    """Calcula dias úteis entre duas datas (exclui fins de semana)."""
+    if data_fim <= data_inicio:
+        return 1
+    # numpy busdays_count: conta dias úteis M-F
+    dias = np.busday_count(data_inicio, data_fim)
+    return max(dias, 1)
 
 
 def render():
@@ -69,22 +79,30 @@ def render():
         )
     
     with col2:
-        st.markdown("### 💰 Dados de Mercado (Automático)")
+        st.markdown("### 💰 Dados de Mercado")
         
-        # Busca preço atual
-        preco_atual = 0.0
+        # Busca preço atual automaticamente
+        preco_buscado = 0.0
         if ticker:
             with st.spinner(f"Buscando {ticker}..."):
-                preco_atual = get_current_price(ticker)
+                preco_buscado = get_current_price(ticker)
         
         col_preco, col_cdi = st.columns(2)
         
-        if preco_atual > 0:
-            col_preco.metric("Preço Atual", f"R$ {preco_atual:.2f}")
-        else:
-            col_preco.metric("Preço Atual", "R$ 0.00")
-            if ticker:
-                st.warning("Não foi possível obter o preço atual.")
+        # Input editável do preço atual (com valor buscado como default)
+        with col_preco:
+            preco_atual = st.number_input(
+                "Preço Atual (R$)",
+                value=preco_buscado,
+                step=0.01,
+                format="%.2f",
+                help="Buscado automaticamente. Edite se necessário."
+            )
+            if preco_buscado > 0 and preco_atual != preco_buscado:
+                st.caption(f"📡 Preço buscado: R$ {preco_buscado:.2f}")
+            elif preco_buscado == 0 and ticker:
+                st.warning("Não foi possível buscar. Insira manualmente.")
+
         
         # CDI (Selic)
         cdi_anual = get_selic_annual()
@@ -93,16 +111,20 @@ def render():
         
         col_cdi.metric("CDI Anual", f"{cdi_anual:.2f}%")
         
-        # Dias até conclusão
-        dias_para_conclusao = (data_conclusao - date.today()).days
-        dias_para_conclusao = max(dias_para_conclusao, 1)  # Mínimo 1 dia
+        # Dias até conclusão (corridos e úteis)
+        dias_corridos = (data_conclusao - date.today()).days
+        dias_corridos = max(dias_corridos, 1)  # Mínimo 1 dia
+        dias_uteis = calcular_dias_uteis(date.today(), data_conclusao)
         
-        st.metric("Dias para Conclusão", f"{dias_para_conclusao} dias")
+        dias_col1, dias_col2 = st.columns(2)
+        dias_col1.metric("Dias Corridos", f"{dias_corridos}")
+        dias_col2.metric("Dias Úteis", f"{dias_uteis}", help="Excluindo fins de semana")
         
         # Exibe CDI mensal e diário
         cdi_col1, cdi_col2 = st.columns(2)
         cdi_col1.metric("CDI Mensal", f"{cdi_mensal:.2f}%")
-        cdi_col2.metric("CDI Diário", f"{cdi_diario:.4f}%")
+        cdi_col2.metric("CDI Diário", f"{cdi_diario:.4f}%", help="Base 252 dias úteis")
+
     
     # ===================== CÁLCULOS =====================
     st.markdown("---")
@@ -124,12 +146,13 @@ def render():
         # Retorno esperado com margem (ponderado pela probabilidade estimada)
         retorno_com_margem = retorno_esperado * (prob_estimada / 100)
         
-        # Retorno diário
-        retorno_diario = retorno_esperado / dias_para_conclusao if dias_para_conclusao > 0 else 0
-        retorno_diario_margem = retorno_com_margem / dias_para_conclusao if dias_para_conclusao > 0 else 0
+        # Retorno diário (usando dias corridos para timeline real)
+        retorno_diario = retorno_esperado / dias_corridos if dias_corridos > 0 else 0
+        retorno_diario_margem = retorno_com_margem / dias_corridos if dias_corridos > 0 else 0
         
-        # CDI do período
-        cdi_periodo = ((1 + cdi_anual / 100) ** (dias_para_conclusao / 365) - 1) * 100
+        # CDI do período (usando dias úteis - base 252)
+        cdi_periodo = ((1 + cdi_anual / 100) ** (dias_uteis / 252) - 1) * 100
+
         
         # % do CDI
         pct_cdi = (retorno_esperado / cdi_periodo) * 100 if cdi_periodo > 0 else 0
@@ -185,7 +208,7 @@ def render():
         # Linha 4: Comparativo CDI
         st.markdown("### Comparativo com CDI")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("CDI do Período", f"{cdi_periodo:.2f}%", help=f"CDI acumulado em {dias_para_conclusao} dias")
+        c1.metric("CDI do Período", f"{cdi_periodo:.2f}%", help=f"CDI acumulado em {dias_uteis} dias úteis")
         c2.metric(
             "% do CDI", 
             f"{pct_cdi:.0f}%",
@@ -198,7 +221,8 @@ def render():
             delta="Acima do CDI" if pct_cdi_margem > 100 else "Abaixo do CDI",
             delta_color="normal" if pct_cdi_margem > 100 else "inverse"
         )
-        c4.metric("Dias para Conclusão", f"{dias_para_conclusao}")
+        c4.metric("Dias Úteis", f"{dias_uteis}", help=f"{dias_corridos} dias corridos")
+
         
         # Análise qualitativa
         st.markdown("---")
