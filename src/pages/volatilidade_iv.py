@@ -400,9 +400,10 @@ def render_term_structure():
                     df_term = calcular_term_structure(term_asset, asset_price, selic, num_vencimentos=6)
                     
                     if not df_term.empty:
-                        col_chart, col_info = st.columns([3, 1])
-                        
-                        with col_chart:
+                        with st.container():
+                            col_chart, col_info = st.columns([3, 1])
+                            
+                            with col_chart:
                             st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
                         
                         with col_info:
@@ -422,7 +423,7 @@ def render_term_structure():
                                 st.metric("IV Curto Prazo", f"{df_term['iv'].iloc[0]:.1f}%")
                                 st.metric("IV Longo Prazo", f"{df_term['iv'].iloc[-1]:.1f}%")
                         
-                        with st.expander("📋 Detalhes por Vencimento"):
+                            with st.expander("📋 Detalhes por Vencimento"):
                             df_display = df_term[['expiry_date', 'days_to_exp', 'iv', 'strike', 'option_ticker', 'option_price']].copy()
                             df_display.columns = ['Vencimento', 'Dias', 'IV (%)', 'Strike', 'Ticker Opção', 'Prêmio (R$)']
                             df_display['Vencimento'] = df_display['Vencimento'].apply(lambda x: x.strftime('%d/%m/%Y'))
@@ -432,8 +433,9 @@ def render_term_structure():
                 else:
                     st.error(f"Não foi possível obter o preço de {term_asset}")
             except Exception as e:
-                st.error(f"Erro ao calcular Term Structure: {e}")
-                st.code(traceback.format_exc(), language="python")
+                with st.container():
+                     st.error(f"Erro ao calcular Term Structure: {e}")
+                     st.code(traceback.format_exc(), language="python")
     
     st.markdown("---")
 
@@ -504,9 +506,10 @@ def render_volatility_skew():
                         df_skew = calcular_volatility_skew(skew_asset, asset_price, selic, expiry)
                         
                         if not df_skew.empty and len(df_skew) >= 3:
-                            col_chart, col_info = st.columns([3, 1])
-                            
-                            with col_chart:
+                            with st.container():
+                                col_chart, col_info = st.columns([3, 1])
+                                
+                                with col_chart:
                                 st.plotly_chart(gerar_grafico_skew(df_skew, skew_asset), use_container_width=True, key="skew_chart")
                             
                             with col_info:
@@ -533,7 +536,7 @@ def render_volatility_skew():
                                         st.info(f"**Skew Ratio**: {skew_ratio:.2f}")
                                         st.caption("🔵 Proteção barata")
                             
-                            with st.expander("📋 Detalhes por Strike"):
+                                with st.expander("📋 Detalhes por Strike"):
                                 df_display = df_skew[['strike', 'moneyness', 'iv', 'option_ticker', 'option_price']].copy()
                                 df_display.columns = ['Strike', 'Moneyness (%)', 'IV (%)', 'Ticker Opção', 'Prêmio (R$)']
                                 df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}")
@@ -548,8 +551,9 @@ def render_volatility_skew():
                 else:
                     st.error(f"Não foi possível obter o preço de {skew_asset}")
             except Exception as e:
-                st.error(f"Erro ao calcular Volatility Skew: {e}")
-                st.code(traceback.format_exc(), language="python")
+                with st.container():
+                    st.error(f"Erro ao calcular Volatility Skew: {e}")
+                    st.code(traceback.format_exc(), language="python")
     
     st.markdown("---")
 
