@@ -77,6 +77,16 @@ def render():
             value=80,
             help="Sua estimativa pessoal da probabilidade de sucesso do deal"
         )
+        
+        st.markdown("### 💼 Posição")
+        qtd_acoes = st.number_input(
+            "Quantidade de Ações",
+            value=0,
+            step=100,
+            min_value=0,
+            help="Quantidade de ações para estimar lucro em R$"
+        )
+
     
     with col2:
         st.markdown("### 💰 Dados de Mercado")
@@ -223,6 +233,39 @@ def render():
         )
         c4.metric("Dias Úteis", f"{dias_uteis}", help=f"{dias_corridos} dias corridos")
 
+        # Linha 5: Estimativa de Lucro (se qtd > 0)
+        if qtd_acoes > 0:
+            st.markdown("### 💵 Estimativa de Lucro")
+            
+            # Cálculos de lucro
+            valor_investido = qtd_acoes * preco_atual
+            lucro_se_fechar = qtd_acoes * upside
+            lucro_com_margem = lucro_se_fechar * (prob_estimada / 100)
+            prejuizo_se_falhar = qtd_acoes * downside
+            
+            l1, l2, l3, l4 = st.columns(4)
+            l1.metric(
+                "Valor Investido", 
+                f"R$ {valor_investido:,.2f}"
+            )
+            l2.metric(
+                "Lucro se Fechar", 
+                f"R$ {lucro_se_fechar:,.2f}",
+                delta=f"+{retorno_esperado:.2f}%",
+                delta_color="normal"
+            )
+            l3.metric(
+                "Lucro Esperado (c/ prob.)", 
+                f"R$ {lucro_com_margem:,.2f}",
+                help=f"Lucro ponderado pela probabilidade de {prob_estimada}%"
+            )
+            l4.metric(
+                "Prejuízo se Falhar", 
+                f"R$ -{prejuizo_se_falhar:,.2f}",
+                delta=f"-{(downside/preco_atual)*100:.2f}%",
+                delta_color="inverse"
+            )
+        
         
         # Análise qualitativa
         st.markdown("---")
