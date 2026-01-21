@@ -189,6 +189,35 @@ def render():
             st.warning("⚠️ Não foi possível calcular GEX.")
             return
         
+        # Debug: Show IV statistics
+        with st.expander("🔍 Debug: Estatísticas de IV"):
+            if 'iv' in gex_df.columns and 'iv_source' in gex_df.columns:
+                iv_stats_col1, iv_stats_col2, iv_stats_col3 = st.columns(3)
+                with iv_stats_col1:
+                    source_count = (gex_df['iv_source'] == 'SOURCE').sum()
+                    st.metric("IV da Fonte", f"{source_count}")
+                with iv_stats_col2:
+                    nearest_count = (gex_df['iv_source'] == 'NEAREST').sum()
+                    st.metric("IV Nearest Strike", f"{nearest_count}")
+                with iv_stats_col3:
+                    default_count = (gex_df['iv_source'] == 'DEFAULT').sum()
+                    st.metric("IV Default (22%)", f"{default_count}")
+                
+                # Show sample with IV issues
+                zero_iv = gex_df[(gex_df['iv'].isna()) | (gex_df['iv'] <= 0.001)]
+                if len(zero_iv) > 0:
+                    st.warning(f"⚠️ {len(zero_iv)} opções ainda sem IV válido")
+                    st.dataframe(zero_iv[['ticker', 'type', 'strike', 'iv', 'open_interest']].head(10))
+                else:
+                    st.success("✅ Todas as opções têm IV válido!")
+                
+                # Show IV range
+                valid_ivs = gex_df[gex_df['iv'] > 0.001]['iv']
+                if len(valid_ivs) > 0:
+                    st.info(f"📊 IV Range: {valid_ivs.min()*100:.1f}% - {valid_ivs.max()*100:.1f}% | Média: {valid_ivs.mean()*100:.1f}%")
+            else:
+                st.warning("Colunas iv/iv_source não encontradas no DataFrame")
+        
         reference_date = get_last_trading_date()
         
         # Visualização
