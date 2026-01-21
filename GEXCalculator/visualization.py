@@ -10,6 +10,19 @@ from plotly.subplots import make_subplots
 from scipy.interpolate import make_interp_spline
 from typing import Tuple, Dict
 
+# Brokeberg color constants (matching dashboard theme)
+COLORS = {
+    'VERDE_NEON': '#39E58C',
+    'AMARELO_OURO': '#FFB302',
+    'CIANO_NEON': '#00D4FF',
+    'VERMELHO_NEON': '#FF4B4B',
+    'FUNDO_ESCURO': '#050505',
+    'FUNDO_CARDS': '#161B22',
+    'TEXTO_PRINCIPAL': '#F0F6FC',
+    'TEXTO_SECUNDARIO': '#C9D1D9',
+    'GRADE_SUTIL': '#30363D',
+}
+
 
 def calculate_metrics(gex_data: pd.DataFrame, spot_price: float) -> Dict:
     """
@@ -127,51 +140,51 @@ def create_market_gamma_chart(
     # Create figure
     fig = go.Figure()
     
-    # Add CALL line (blue)
+    # Add CALL line (Cyan - matches Brokeberg)
     fig.add_trace(
         go.Scatter(
             x=strikes_smooth_call,
             y=call_smooth,
             mode='lines',
             name='CALL',
-            line=dict(color='#3b82f6', width=2.5),
+            line=dict(color=COLORS['CIANO_NEON'], width=2.5),
             hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Call GEX:</b> %{y:,.0f}<extra></extra>'
         )
     )
     
-    # Add PUT line (pink/red)
+    # Add PUT line (Red - matches Brokeberg)
     fig.add_trace(
         go.Scatter(
             x=strikes_smooth_put,
             y=put_smooth,
             mode='lines',
             name='PUT',
-            line=dict(color='#f472b6', width=2.5),
+            line=dict(color=COLORS['VERMELHO_NEON'], width=2.5),
             hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Put GEX:</b> %{y:,.0f}<extra></extra>'
         )
     )
     
-    # Add CALL+PUT line (yellow/green gradient effect - use yellow)
+    # Add CALL+PUT line (Gold - matches Brokeberg)
     fig.add_trace(
         go.Scatter(
             x=strikes_smooth_total,
             y=total_smooth,
             mode='lines',
             name='CALL + PUT',
-            line=dict(color='#facc15', width=3),
+            line=dict(color=COLORS['AMARELO_OURO'], width=3),
             hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Total GEX:</b> %{y:,.0f}<extra></extra>'
         )
     )
     
     # Add zero line
-    fig.add_hline(y=0, line_dash="solid", line_color="rgba(255,255,255,0.3)", line_width=1)
+    fig.add_hline(y=0, line_dash="solid", line_color=COLORS['GRADE_SUTIL'], line_width=1)
     
     # Add spot price vertical line
     fig.add_vline(
         x=spot_price,
         line_width=2,
         line_dash="solid",
-        line_color="white",
+        line_color=COLORS['VERDE_NEON'],
     )
     
     # Add spot price annotation
@@ -181,47 +194,49 @@ def create_market_gamma_chart(
         yref='paper',
         text=f"Spot: R$ {spot_price:.2f}",
         showarrow=False,
-        font=dict(color='white', size=12),
-        bgcolor='rgba(0,0,0,0.7)',
+        font=dict(color=COLORS['TEXTO_PRINCIPAL'], size=12),
+        bgcolor=COLORS['FUNDO_CARDS'],
         borderpad=4
     )
     
-    # Update layout - dark theme like reference
+    # Update layout - Brokeberg theme
     fig.update_layout(
         title={
             'text': title,
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {'size': 24, 'color': 'white', 'family': 'Arial Black'}
+            'x': 0,
+            'xanchor': 'left',
+            'font': {'size': 20, 'color': COLORS['TEXTO_PRINCIPAL'], 'family': 'Segoe UI, sans-serif'}
         },
         xaxis_title="Strike",
         yaxis_title="GEX",
-        template='plotly_dark',
-        paper_bgcolor='#1a1f2e',
-        plot_bgcolor='#1a1f2e',
+        template='brokeberg',
+        paper_bgcolor=COLORS['FUNDO_ESCURO'],
+        plot_bgcolor=COLORS['FUNDO_ESCURO'],
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="center",
             x=0.5,
-            font=dict(size=12)
+            font=dict(size=12, color=COLORS['TEXTO_SECUNDARIO'])
         ),
         height=500,
         margin=dict(t=100, b=60, l=80, r=40),
         xaxis=dict(
             showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
+            gridcolor=COLORS['GRADE_SUTIL'],
             tickformat=',.0f',
             tickangle=45,
-            range=[spot_price - 50, spot_price + 50]  # Show ±50 from spot
+            range=[spot_price - 50, spot_price + 50],
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
         ),
         yaxis=dict(
             showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
+            gridcolor=COLORS['GRADE_SUTIL'],
             tickformat=',.0f',
             zeroline=True,
-            zerolinecolor='rgba(255,255,255,0.3)'
+            zerolinecolor=COLORS['GRADE_SUTIL'],
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
         )
     )
     
@@ -251,19 +266,19 @@ def create_metrics_panel(metrics: Dict, spot_price: float) -> go.Figure:
         go.Indicator(
             mode="gauge+number",
             value=gamma_score,
-            title={'text': "Gamma Score [σ]", 'font': {'size': 14, 'color': 'white'}},
-            number={'font': {'size': 24, 'color': '#38bdf8'}},
+            title={'text': "Gamma Score [σ]", 'font': {'size': 14, 'color': COLORS['TEXTO_PRINCIPAL']}},
+            number={'font': {'size': 24, 'color': COLORS['CIANO_NEON']}},
             gauge={
-                'axis': {'range': [-1, 1], 'tickwidth': 1, 'tickcolor': "white"},
-                'bar': {'color': "#f97316"},
-                'bgcolor': "rgba(255,255,255,0.1)",
+                'axis': {'range': [-1, 1], 'tickwidth': 1, 'tickcolor': COLORS['TEXTO_SECUNDARIO']},
+                'bar': {'color': COLORS['AMARELO_OURO']},
+                'bgcolor': COLORS['GRADE_SUTIL'],
                 'borderwidth': 0,
                 'steps': [
-                    {'range': [-1, 0], 'color': 'rgba(239,68,68,0.3)'},
-                    {'range': [0, 1], 'color': 'rgba(34,197,94,0.3)'}
+                    {'range': [-1, 0], 'color': 'rgba(255,75,75,0.3)'},  # VERMELHO_NEON with alpha
+                    {'range': [0, 1], 'color': 'rgba(57,229,140,0.3)'}   # VERDE_NEON with alpha
                 ],
                 'threshold': {
-                    'line': {'color': "white", 'width': 2},
+                    'line': {'color': COLORS['TEXTO_PRINCIPAL'], 'width': 2},
                     'thickness': 0.75,
                     'value': gamma_score
                 }
@@ -285,8 +300,8 @@ def create_metrics_panel(metrics: Dict, spot_price: float) -> go.Figure:
         go.Indicator(
             mode="number",
             value=gamma_atual,
-            title={'text': "Gamma Atual", 'font': {'size': 14, 'color': 'white'}},
-            number={'font': {'size': 28, 'color': 'white'}, 'valueformat': '.2s'}
+            title={'text': "Gamma Atual", 'font': {'size': 14, 'color': COLORS['TEXTO_PRINCIPAL']}},
+            number={'font': {'size': 28, 'color': COLORS['TEXTO_PRINCIPAL']}, 'valueformat': '.2s'}
         ),
         row=1, col=2
     )
@@ -296,8 +311,8 @@ def create_metrics_panel(metrics: Dict, spot_price: float) -> go.Figure:
         go.Indicator(
             mode="number",
             value=gamma_min,
-            title={'text': "Gamma Mínimo<br>Negativo", 'font': {'size': 14, 'color': 'white'}},
-            number={'font': {'size': 28, 'color': '#38bdf8'}, 'prefix': 'R$ ', 'valueformat': '.2f'}
+            title={'text': "Gamma Mínimo<br>Negativo", 'font': {'size': 14, 'color': COLORS['TEXTO_PRINCIPAL']}},
+            number={'font': {'size': 28, 'color': COLORS['CIANO_NEON']}, 'prefix': 'R$ ', 'valueformat': '.2f'}
         ),
         row=1, col=3
     )
@@ -307,8 +322,8 @@ def create_metrics_panel(metrics: Dict, spot_price: float) -> go.Figure:
         go.Indicator(
             mode="number",
             value=flip,
-            title={'text': "Flip", 'font': {'size': 14, 'color': 'white'}},
-            number={'font': {'size': 28, 'color': '#38bdf8'}, 'prefix': 'R$ ', 'valueformat': '.2f'}
+            title={'text': "Flip", 'font': {'size': 14, 'color': COLORS['TEXTO_PRINCIPAL']}},
+            number={'font': {'size': 28, 'color': COLORS['CIANO_NEON']}, 'prefix': 'R$ ', 'valueformat': '.2f'}
         ),
         row=1, col=4
     )
@@ -318,15 +333,15 @@ def create_metrics_panel(metrics: Dict, spot_price: float) -> go.Figure:
         go.Indicator(
             mode="number",
             value=gamma_max,
-            title={'text': "Gamma Máximo<br>Positivo", 'font': {'size': 14, 'color': 'white'}},
-            number={'font': {'size': 28, 'color': '#38bdf8'}, 'prefix': 'R$ ', 'valueformat': '.2f'}
+            title={'text': "Gamma Máximo<br>Positivo", 'font': {'size': 14, 'color': COLORS['TEXTO_PRINCIPAL']}},
+            number={'font': {'size': 28, 'color': COLORS['CIANO_NEON']}, 'prefix': 'R$ ', 'valueformat': '.2f'}
         ),
         row=1, col=5
     )
     
     fig.update_layout(
-        paper_bgcolor='#1a1f2e',
-        plot_bgcolor='#1a1f2e',
+        paper_bgcolor=COLORS['FUNDO_ESCURO'],
+        plot_bgcolor=COLORS['FUNDO_ESCURO'],
         height=150,
         margin=dict(t=40, b=20, l=20, r=20),
         showlegend=False
