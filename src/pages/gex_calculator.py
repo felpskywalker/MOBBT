@@ -12,23 +12,53 @@ from src.data_loaders.opcoes_net import fetch_opcoes_net_data, parse_opcoes_net_
 from src.models.gex_calculator import calculate_gex_dataframe, aggregate_gex_by_strike, get_selic_rate
 from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics
 
+# Cache for spot prices
+_spot_cache = {}
 
-def get_spot_price(ticker: str) -> float:
-    """Obtém o preço atual do ativo via yfinance."""
-    try:
-        yahoo_ticker = f"{ticker}.SA" if not ticker.endswith(".SA") else ticker
-        stock = yf.Ticker(yahoo_ticker)
-        hist = stock.history(period="1d")
-        
-        if not hist.empty:
-            return float(hist['Close'].iloc[-1])
-        
-        # Fallback
-        info = stock.info
-        return float(info.get('regularMarketPrice', info.get('previousClose', 0)))
-    except Exception as e:
-        st.warning(f"Erro ao buscar preço: {e}")
-        return 0.0
+def get_spot_price(ticker: str, use_cache: bool = True) -> float:
+    """Obtém o preço atual do ativo via yfinance com retry e cache."""
+    import time as time_module  # Avoid conflict with datetime import
+    
+    cache_key = ticker.upper().replace('.SA', '')
+    
+    # Check cache first (valid for 5 minutes)
+    if use_cache and cache_key in _spot_cache:
+        cached_price, cached_time = _spot_cache[cache_key]
+        if (datetime.now() - cached_time).seconds < 300:
+            return cached_price
+    
+    yahoo_ticker = f"{cache_key}.SA"
+    
+    # Try up to 3 times with exponential backoff
+    for attempt in range(3):
+        try:
+            stock = yf.Ticker(yahoo_ticker)
+            hist = stock.history(period="1d")
+            
+            if not hist.empty:
+                price = float(hist['Close'].iloc[-1])
+                _spot_cache[cache_key] = (price, datetime.now())
+                return price
+            
+            # Fallback to info
+            info = stock.info
+            price = float(info.get('regularMarketPrice', info.get('previousClose', 0)))
+            if price > 0:
+                _spot_cache[cache_key] = (price, datetime.now())
+                return price
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'rate' in error_msg or 'limit' in error_msg or 'too many' in error_msg:
+                # Rate limited - wait and retry
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                st.warning(f"Rate limit detectado, aguardando {wait_time}s... (tentativa {attempt+1}/3)")
+                time_module.sleep(wait_time)
+            else:
+                st.warning(f"Erro ao buscar preço: {e}")
+                break
+    
+    return 0.0
 
 
 def get_last_trading_date() -> str:
