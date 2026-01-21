@@ -377,6 +377,137 @@ def create_full_dashboard(
     return main_chart, metrics_panel, metrics
 
 
+def create_open_interest_chart(
+    options_df: pd.DataFrame,
+    spot_price: float,
+    title: str = "Open Interest por Strike",
+    bucket_size: float = 1.0
+) -> go.Figure:
+    """
+    Create Open Interest chart by strike, showing CALL and PUT bars side by side.
+    
+    Args:
+        options_df: DataFrame with columns 'strike', 'type', 'open_interest'
+        spot_price: Current spot price for reference line
+        title: Chart title
+        bucket_size: Size of strike buckets for aggregation
+    """
+    if options_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sem dados", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+    
+    df = options_df.copy()
+    
+    # Bucket strikes
+    df['strike_bucket'] = (df['strike'] / bucket_size).round() * bucket_size
+    
+    # Aggregate by strike bucket and type
+    call_oi = df[df['type'] == 'CALL'].groupby('strike_bucket')['open_interest'].sum().reset_index()
+    call_oi.columns = ['strike', 'call_oi']
+    
+    put_oi = df[df['type'] == 'PUT'].groupby('strike_bucket')['open_interest'].sum().reset_index()
+    put_oi.columns = ['strike', 'put_oi']
+    
+    # Merge
+    oi_data = pd.merge(call_oi, put_oi, on='strike', how='outer').fillna(0)
+    oi_data = oi_data.sort_values('strike').reset_index(drop=True)
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add CALL bars (positive, cyan)
+    fig.add_trace(
+        go.Bar(
+            x=oi_data['strike'],
+            y=oi_data['call_oi'],
+            name='CALL OI',
+            marker_color=COLORS['CIANO_NEON'],
+            opacity=0.8,
+            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Call OI:</b> %{y:,.0f}<extra></extra>'
+        )
+    )
+    
+    # Add PUT bars (negative to show below axis, red)
+    fig.add_trace(
+        go.Bar(
+            x=oi_data['strike'],
+            y=-oi_data['put_oi'],  # Negative to show below zero line
+            name='PUT OI',
+            marker_color=COLORS['VERMELHO_NEON'],
+            opacity=0.8,
+            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Put OI:</b> %{y:,.0f}<extra></extra>'
+        )
+    )
+    
+    # Add zero line
+    fig.add_hline(y=0, line_dash="solid", line_color=COLORS['GRADE_SUTIL'], line_width=1)
+    
+    # Add spot price vertical line
+    fig.add_vline(
+        x=spot_price,
+        line_width=2,
+        line_dash="solid",
+        line_color=COLORS['VERDE_NEON'],
+    )
+    
+    # Add spot price annotation
+    fig.add_annotation(
+        x=spot_price,
+        y=1.05,
+        yref='paper',
+        text=f"Spot: R$ {spot_price:.2f}",
+        showarrow=False,
+        font=dict(color=COLORS['TEXTO_PRINCIPAL'], size=12),
+        bgcolor=COLORS['FUNDO_CARDS'],
+        borderpad=4
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title={
+            'text': title,
+            'x': 0,
+            'xanchor': 'left',
+            'font': {'size': 20, 'color': COLORS['TEXTO_PRINCIPAL'], 'family': 'Segoe UI, sans-serif'}
+        },
+        xaxis_title="Strike",
+        yaxis_title="Open Interest",
+        template='brokeberg',
+        paper_bgcolor=COLORS['FUNDO_ESCURO'],
+        plot_bgcolor=COLORS['FUNDO_ESCURO'],
+        barmode='relative',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12, color=COLORS['TEXTO_SECUNDARIO'])
+        ),
+        height=500,
+        margin=dict(t=100, b=60, l=80, r=40),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor=COLORS['GRADE_SUTIL'],
+            tickformat=',.0f',
+            tickangle=45,
+            range=[spot_price - 50, spot_price + 50],
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor=COLORS['GRADE_SUTIL'],
+            tickformat=',.0f',
+            zeroline=True,
+            zerolinecolor=COLORS['GRADE_SUTIL'],
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
+        )
+    )
+    
+    return fig
+
+
 # Keep old functions for backward compatibility
 def create_gex_chart(gex_data: pd.DataFrame, spot_price: float, title: str = "") -> go.Figure:
     """Backward compatible function - now uses new style."""

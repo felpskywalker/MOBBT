@@ -10,7 +10,7 @@ import pandas as pd
 
 from src.data_loaders.opcoes_net import fetch_opcoes_net_data, parse_opcoes_net_data
 from src.models.gex_calculator import calculate_gex_dataframe, aggregate_gex_by_strike, get_selic_rate
-from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics
+from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics, create_open_interest_chart
 
 # Cache for spot prices
 _spot_cache = {}
@@ -101,7 +101,7 @@ def render():
     st.markdown("---")
     
     # Controles
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
     
     with col1:
         ticker = st.text_input(
@@ -120,9 +120,17 @@ def render():
         )
     
     with col3:
+        chart_type = st.radio(
+            "Visualização",
+            options=["Gamma Exposure", "Open Interest"],
+            horizontal=True,
+            help="Tipo de gráfico a exibir"
+        )
+    
+    with col4:
         st.write("")  # Espaçamento
         st.write("")
-        calcular = st.button("🔄 Calcular GEX", type="primary", use_container_width=True)
+        calcular = st.button("🔄 Calcular", type="primary", use_container_width=True)
     
     if calcular:
         with st.spinner(f"Obtendo preço de {ticker}..."):
@@ -267,11 +275,16 @@ def render():
         else:
             st.warning("📉 **Regime Negativo**: Spot abaixo do Flip Point. Mercado tende a ser mais volátil.")
         
-        # Gráfico principal
+        # Gráfico principal - baseado na seleção
         try:
-            title = f"Market Gamma - {ticker} ({reference_date})"
-            fig = create_market_gamma_chart(gex_by_strike, spot_price, title)
-            st.plotly_chart(fig, use_container_width=True, key="gex_main_chart")
+            if chart_type == "Gamma Exposure":
+                title = f"Market Gamma - {ticker} ({reference_date})"
+                fig = create_market_gamma_chart(gex_by_strike, spot_price, title)
+                st.plotly_chart(fig, use_container_width=True, key="gex_main_chart")
+            else:  # Open Interest
+                title = f"Open Interest - {ticker} ({reference_date})"
+                fig = create_open_interest_chart(options_df, spot_price, title, bucket_size)
+                st.plotly_chart(fig, use_container_width=True, key="oi_main_chart")
         except Exception as e:
             st.error(f"❌ Erro ao gerar gráfico: {e}")
         
