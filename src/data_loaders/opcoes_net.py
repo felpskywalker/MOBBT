@@ -101,19 +101,35 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
         )
         time.sleep(3) # Extra wait for initial scripts
         
-        # 1. Select ALL maturities (Vencimentos)
+        # 1. Select ALL maturities (Vencimentos) using JavaScript for reliability
         print("Selecting all maturities...")
-        checkboxes = driver.find_elements(By.CSS_SELECTOR, "#grade-vencimentos-dates input[type='checkbox']")
-        for ck in checkboxes:
-            if not ck.is_selected():
-                try:
-                    driver.execute_script("arguments[0].click();", ck)
-                    time.sleep(0.1)
-                except:
-                    pass
-        
-        # Wait for table reload
-        time.sleep(2)
+        try:
+            # Use JavaScript to select all maturity checkboxes
+            driver.execute_script("""
+                // Select all maturity checkboxes
+                var checkboxes = document.querySelectorAll('#grade-vencimentos-dates input[type="checkbox"]');
+                console.log('Found ' + checkboxes.length + ' maturity checkboxes');
+                checkboxes.forEach(function(cb) {
+                    if (!cb.checked) {
+                        cb.click();
+                    }
+                });
+            """)
+            time.sleep(2)
+            
+            # Trigger grid reload
+            driver.execute_script("""
+                try {
+                    if (typeof gradeOpcoes !== 'undefined' && gradeOpcoes.CarregarGrade) {
+                        gradeOpcoes.CarregarGrade();
+                    }
+                } catch(e) {
+                    console.log('Could not reload grid: ' + e);
+                }
+            """)
+            time.sleep(3)  # Wait for table reload
+        except Exception as e:
+            print(f"Error selecting maturities: {e}")
         
         # 2. Select ALL strikes (Expand Range)
         print("Expanding strike range to maximum...")
