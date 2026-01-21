@@ -101,6 +101,7 @@ with st.sidebar:
             "Crédito Privado",
             "Amplitude",
             "Volatilidade IV",
+            "GEX Gamma",
             "Calendário",
             "Econômicos BR",
             "Commodities",
@@ -119,6 +120,7 @@ with st.sidebar:
             "wallet2",
             "water",
             "activity",
+            "lightning",
             "calendar-event",
             "bar-chart-line-fill",
             "box-seam",
@@ -177,6 +179,10 @@ elif pagina_selecionada == "Amplitude":
 elif pagina_selecionada == "Volatilidade IV":
     from src.pages import volatilidade_iv
     volatilidade_iv.render()
+
+elif pagina_selecionada == "GEX Gamma":
+    from src.pages import gex_calculator
+    gex_calculator.render()
 
 elif pagina_selecionada == "Calendário":
     from src.pages import event_calendar

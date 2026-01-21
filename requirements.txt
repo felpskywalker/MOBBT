@@ -16,4 +16,7 @@ scipy
 requests
 supabase
 beautifulsoup4
+selenium
+webdriver-manager
+lxml
 
