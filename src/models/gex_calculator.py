@@ -414,37 +414,54 @@ def calculate_gex_dataframe(
          df['iv_source'] = df['iv'].apply(lambda x: 'SOURCE' if pd.notna(x) else None)
 
     # Count IVs available before fallback
-    iv_from_market = df['iv'].notna().sum()
+    iv_from_market = (df['iv'].notna() & (df['iv'] > 0.001)).sum()
     
-    # Second pass: Approximate IV for options without market price using nearest strike
+    # Second pass: Approximate IV for options without valid IV using nearest strike
     def get_fallback_iv(row):
-        if pd.notna(row['iv']):
-            return row['iv'], row['iv_source']  # Already has IV from market price
+        # Check if IV is valid (not null AND > 0.001)
+        if pd.notna(row['iv']) and row['iv'] > 0.001:
+            return row['iv'], row.get('iv_source', 'SOURCE')
         
-        # Find options of same type with valid IV
-        same_type_with_iv = df[
+        # Find options of same type AND same expiry with valid IV (best match)
+        same_expiry_type = df[
             (df['type'] == row['type']) & 
-            (df['iv'].notna())
+            (df['expiry'] == row['expiry']) &
+            (df['iv'].notna()) &
+            (df['iv'] > 0.001)
         ]
         
-        if same_type_with_iv.empty:
-            return volatility, 'DEFAULT'  # No reference, use default
+        if not same_expiry_type.empty:
+            # Find nearest strike with valid IV
+            strike_diffs = abs(same_expiry_type['strike'] - row['strike'])
+            nearest_idx = strike_diffs.idxmin()
+            nearest_iv = df.loc[nearest_idx, 'iv']
+            if pd.notna(nearest_iv) and nearest_iv > 0.001:
+                return nearest_iv, 'NEAREST'
         
-        # Find nearest strike with valid IV
-        strike_diffs = abs(same_type_with_iv['strike'] - row['strike'])
-        nearest_idx = strike_diffs.idxmin()
-        nearest_iv = df.loc[nearest_idx, 'iv']
+        # Fallback: same type, any expiry
+        same_type_with_iv = df[
+            (df['type'] == row['type']) & 
+            (df['iv'].notna()) &
+            (df['iv'] > 0.001)
+        ]
         
-        return nearest_iv, 'NEAREST'
+        if not same_type_with_iv.empty:
+            strike_diffs = abs(same_type_with_iv['strike'] - row['strike'])
+            nearest_idx = strike_diffs.idxmin()
+            nearest_iv = df.loc[nearest_idx, 'iv']
+            if pd.notna(nearest_iv) and nearest_iv > 0.001:
+                return nearest_iv, 'NEAREST'
+        
+        return volatility, 'DEFAULT'  # No reference, use default (22%)
     
     # Apply fallback and track source
     fallback_results = df.apply(get_fallback_iv, axis=1)
     df['iv'] = fallback_results.apply(lambda x: x[0])
     df['iv_source'] = fallback_results.apply(lambda x: x[1])
     
-    # Fill any remaining NaN with default volatility
-    df.loc[df['iv'].isna(), 'iv_source'] = 'DEFAULT'
-    df['iv'] = df['iv'].fillna(volatility)
+    # Final safety: Fill any remaining invalid IVs with default volatility
+    df.loc[(df['iv'].isna()) | (df['iv'] <= 0.001), 'iv_source'] = 'DEFAULT'
+    df.loc[(df['iv'].isna()) | (df['iv'] <= 0.001), 'iv'] = volatility
     
     # Log IV statistics
     iv_from_nearest = (df['iv_source'] == 'NEAREST').sum()
