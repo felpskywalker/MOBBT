@@ -16,15 +16,15 @@ from src.components.charts_gex import create_market_gamma_chart, create_metrics_
 _spot_cache = {}
 
 def get_spot_price(ticker: str, use_cache: bool = True) -> float:
-    """Obtém o preço atual do ativo via yfinance com retry e cache."""
-    import time as time_module  # Avoid conflict with datetime import
+    """Obtém o preço de fechamento de ontem do ativo via yfinance."""
+    import time as time_module
     
     cache_key = ticker.upper().replace('.SA', '')
     
-    # Check cache first (valid for 5 minutes)
+    # Check cache first (valid for 1 hour since using previous close)
     if use_cache and cache_key in _spot_cache:
         cached_price, cached_time = _spot_cache[cache_key]
-        if (datetime.now() - cached_time).seconds < 300:
+        if (datetime.now() - cached_time).seconds < 3600:
             return cached_price
     
     yahoo_ticker = f"{cache_key}.SA"
@@ -33,25 +33,19 @@ def get_spot_price(ticker: str, use_cache: bool = True) -> float:
     for attempt in range(3):
         try:
             stock = yf.Ticker(yahoo_ticker)
-            hist = stock.history(period="1d")
+            # Get 5 days of history to ensure we get previous close
+            hist = stock.history(period="5d")
             
-            if not hist.empty:
+            if not hist.empty and len(hist) >= 1:
+                # Get the last available close (yesterday or most recent)
                 price = float(hist['Close'].iloc[-1])
-                _spot_cache[cache_key] = (price, datetime.now())
-                return price
-            
-            # Fallback to info
-            info = stock.info
-            price = float(info.get('regularMarketPrice', info.get('previousClose', 0)))
-            if price > 0:
                 _spot_cache[cache_key] = (price, datetime.now())
                 return price
                 
         except Exception as e:
             error_msg = str(e).lower()
             if 'rate' in error_msg or 'limit' in error_msg or 'too many' in error_msg:
-                # Rate limited - wait and retry
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                wait_time = 2 ** attempt
                 st.warning(f"Rate limit detectado, aguardando {wait_time}s... (tentativa {attempt+1}/3)")
                 time_module.sleep(wait_time)
             else:
