@@ -16,7 +16,7 @@ from src.components.charts_gex import create_market_gamma_chart, create_metrics_
 _spot_cache = {}
 
 def get_spot_price(ticker: str, use_cache: bool = True) -> float:
-    """Obtém o preço de fechamento de ontem do ativo via yfinance."""
+    """Obtém o preço de fechamento do último pregão do ativo via yfinance."""
     import time as time_module
     
     cache_key = ticker.upper().replace('.SA', '')
@@ -33,11 +33,12 @@ def get_spot_price(ticker: str, use_cache: bool = True) -> float:
     for attempt in range(3):
         try:
             stock = yf.Ticker(yahoo_ticker)
-            # Get 5 days of history to ensure we get previous close
+            # Get 5 days of history to ensure we have data
             hist = stock.history(period="5d")
             
             if not hist.empty and len(hist) >= 1:
-                # Get the last available close (yesterday or most recent)
+                # Get last trading day's close (último pregão)
+                # yfinance only returns trading days, so iloc[-1] is always the last business day
                 price = float(hist['Close'].iloc[-1])
                 _spot_cache[cache_key] = (price, datetime.now())
                 return price
