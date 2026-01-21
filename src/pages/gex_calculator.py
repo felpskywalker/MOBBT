@@ -16,7 +16,11 @@ from src.components.charts_gex import create_market_gamma_chart, create_metrics_
 _spot_cache = {}
 
 def get_spot_price(ticker: str, use_cache: bool = True) -> float:
-    """Obtém o preço de fechamento do último pregão do ativo via yfinance."""
+    """Obtém o preço de fechamento do último pregão (D-1) do ativo via yfinance.
+    
+    Usa previousClose para garantir que é o fechamento do dia anterior,
+    e não dados intraday com delay de 15 minutos.
+    """
     import time as time_module
     
     cache_key = ticker.upper().replace('.SA', '')
@@ -33,13 +37,20 @@ def get_spot_price(ticker: str, use_cache: bool = True) -> float:
     for attempt in range(3):
         try:
             stock = yf.Ticker(yahoo_ticker)
-            # Get 5 days of history to ensure we have data
-            hist = stock.history(period="5d")
             
-            if not hist.empty and len(hist) >= 1:
-                # Get last trading day's close (último pregão)
-                # yfinance only returns trading days, so iloc[-1] is always the last business day
-                price = float(hist['Close'].iloc[-1])
+            # Use previousClose - this is ALWAYS the prior day's closing price
+            # Not affected by intraday 15-min delay
+            info = stock.info
+            if 'previousClose' in info and info['previousClose']:
+                price = float(info['previousClose'])
+                _spot_cache[cache_key] = (price, datetime.now())
+                return price
+            
+            # Fallback to history if info fails
+            hist = stock.history(period="5d")
+            if not hist.empty and len(hist) >= 2:
+                # Use second-to-last to ensure it's previous close, not today's intraday
+                price = float(hist['Close'].iloc[-2])
                 _spot_cache[cache_key] = (price, datetime.now())
                 return price
                 
