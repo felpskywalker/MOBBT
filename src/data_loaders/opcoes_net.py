@@ -169,10 +169,11 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
             last_height = new_height
             attempts += 1
             
-        # DOM Extraction with CORRECT indices from reference code
-        # Indices based on opcoes.net.br table structure:
-        # 0: Ticker (Modelo), 1: Vencimento (Expiry date), 3: Tipo (CALL/PUT)
-        # 6: Strike, 10: Último (Price), 14: Vol.Impl. (IV)
+        # DOM Extraction with CORRECT indices for multi-expiry table
+        # When multiple expiries are selected, table adds "Vencimento" and "Dias úteis" columns
+        # Indices verified via browser inspection:
+        # 0: Ticker, 1: Vencimento (Expiry date), 2: Dias úteis, 3: Tipo (CALL/PUT)
+        # 6: Strike, 9: Último (Price), 10: Var.(%), 14: Vol.Impl. (IV)
         # 21: Cob, 22: Trav, 23: Descob
         extraction_script = """
         return (() => {
@@ -182,13 +183,13 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
                 if (cells.length > 20) {
-                    // Reference indices that work:
+                    // Correct indices for multi-expiry table:
                     const ticker = cells[0].innerText.trim();
                     const expiry = cells[1].innerText.trim();
                     const type_raw = cells[3].innerText.trim();
                     const strike_raw = cells[6].innerText.trim();
                     const iv_raw = cells[14].innerText.trim();
-                    const last_price = cells[10].innerText.trim();
+                    const last_price = cells[9].innerText.trim();  // Index 9 = Último, NOT 10 (Var.%)
                     
                     // Open Interest components
                     const cob = cells[21].innerText.trim();
