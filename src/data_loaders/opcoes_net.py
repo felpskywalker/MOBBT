@@ -169,48 +169,90 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
             last_height = new_height
             attempts += 1
             
-        # Javascript extraction for speed and reliability
-        # Column indices based on opcoes.net.br table structure (January 2026):
-        # 0: Ticker, 1: Tipo (CALL/PUT), 2: F.M., 3: Mod., 4: Strike, 
-        # 5: A/I/OTM, 6: Dist.%, 7: Último (PRICE), 8: Var.%,
-        # 9: Data/Hora, 10: Núm.Neg., 11: Vol.Fin., 12: Vol.Impl.% (IV),
-        # 13-18: Greeks, 19: Cob, 20: Trav, 21: Descob
+        # Javascript extraction - USE COLUMN HEADERS to find correct indices
+        # This is necessary because the table renders with different column order
+        # on different browsers/environments (headless vs desktop)
         extraction_script = """
         return (() => {
+            // First, find all header columns to map names to indices
+            const headerRow = document.querySelector('.dt-scroll-headInner thead tr, .dataTables_scrollHeadInner thead tr, thead tr');
+            const headers = headerRow ? Array.from(headerRow.querySelectorAll('th')).map(th => th.innerText.trim().toLowerCase()) : [];
+            
+            console.log('Headers found:', headers);
+            
+            // Define column name patterns to look for
+            const colPatterns = {
+                ticker: ['modelo', 'ticker', 'código'],
+                type: ['tipo'],
+                strike: ['strike'],
+                price: ['último', 'ultimo', 'preço', 'preco'],
+                iv: ['vol. impl', 'volatilidade', 'iv'],
+                cob: ['coberto', 'cob'],
+                trav: ['travado', 'trav'],
+                descob: ['descoberto', 'descob']
+            };
+            
+            // Find column index for each field
+            function findColIndex(patterns) {
+                for (let i = 0; i < headers.length; i++) {
+                    for (let pattern of patterns) {
+                        if (headers[i].includes(pattern)) return i;
+                    }
+                }
+                return -1;
+            }
+            
+            const cols = {
+                ticker: findColIndex(colPatterns.ticker),
+                type: findColIndex(colPatterns.type),
+                strike: findColIndex(colPatterns.strike),
+                price: findColIndex(colPatterns.price),
+                iv: findColIndex(colPatterns.iv),
+                cob: findColIndex(colPatterns.cob),
+                trav: findColIndex(colPatterns.trav),
+                descob: findColIndex(colPatterns.descob)
+            };
+            
+            console.log('Column indices:', cols);
+            
+            // Fallback to hardcoded indices if headers not found
+            if (cols.ticker === -1) cols.ticker = 0;
+            if (cols.type === -1) cols.type = 1;
+            if (cols.strike === -1) cols.strike = 4;
+            if (cols.price === -1) cols.price = 7;
+            if (cols.iv === -1) cols.iv = 12;
+            if (cols.cob === -1) cols.cob = 19;
+            if (cols.trav === -1) cols.trav = 20;
+            if (cols.descob === -1) cols.descob = 21;
+            
             const rows = document.querySelectorAll('.dt-scroll-body tbody tr');
             const data = [];
             
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length > 20) {
-                    // Correct column indices based on actual table structure
-                    const ticker = cells[0].innerText.trim();
-                    const type_raw = cells[1].innerText.trim();  // Tipo (CALL/PUT)
-                    const strike_raw = cells[4].innerText.trim();  // Strike
-                    const last_price = cells[7].innerText.trim();  // Último (actual price, positive)
-                    const iv_raw = cells[12].innerText.trim();  // Vol. Impl. (%)
+                if (cells.length > 10) {
+                    const ticker = cells[cols.ticker] ? cells[cols.ticker].innerText.trim() : '';
+                    const type_raw = cells[cols.type] ? cells[cols.type].innerText.trim() : '';
+                    const strike_raw = cells[cols.strike] ? cells[cols.strike].innerText.trim() : '';
+                    const last_price = cells[cols.price] ? cells[cols.price].innerText.trim() : '';
+                    const iv_raw = cells[cols.iv] ? cells[cols.iv].innerText.trim() : '';
+                    const cob = cells[cols.cob] ? cells[cols.cob].innerText.trim() : '0';
+                    const trav = cells[cols.trav] ? cells[cols.trav].innerText.trim() : '0';
+                    const descob = cells[cols.descob] ? cells[cols.descob].innerText.trim() : '0';
                     
-                    // Open Interest components
-                    const cob = cells[19].innerText.trim();
-                    const trav = cells[20].innerText.trim();
-                    const descob = cells[21].innerText.trim();
-                    
-                    // Get expiry from ticker format or from date/time if available
-                    // For now, we'll need to extract from ticker series code
-                    // The table doesn't have a clear expiry column, we'll parse it
-                    const expiry = cells[9].innerText.trim();  // Data/Hora - may contain date info
-                    
-                    data.push({
-                        ticker: ticker,
-                        expiry: expiry,
-                        type: type_raw,
-                        strike: strike_raw,
-                        iv: iv_raw,
-                        cob: cob,
-                        trav: trav,
-                        descob: descob,
-                        last_price: last_price
-                    });
+                    // Only add if we got valid ticker (starts with expected pattern)
+                    if (ticker && ticker.match(/^[A-Z]{4,5}/)) {
+                        data.push({
+                            ticker: ticker,
+                            type: type_raw,
+                            strike: strike_raw,
+                            iv: iv_raw,
+                            cob: cob,
+                            trav: trav,
+                            descob: descob,
+                            last_price: last_price
+                        });
+                    }
                 }
             });
             return data;
