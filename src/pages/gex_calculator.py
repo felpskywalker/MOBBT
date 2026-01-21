@@ -140,6 +140,10 @@ def render():
                 # Debug info
                 if raw_data:
                     st.info(f"📊 Dados brutos: {len(raw_data)} linhas extraídas")
+                    # Show sample of raw data for debugging
+                    with st.expander("🔍 Debug: Amostra dos dados brutos (primeiras 3 linhas)"):
+                        import json
+                        st.code(json.dumps(raw_data[:3], indent=2, ensure_ascii=False))
                 else:
                     st.warning(f"⚠️ Nenhum dado bruto extraído do site")
                 
