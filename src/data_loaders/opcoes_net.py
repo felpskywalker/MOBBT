@@ -334,12 +334,30 @@ def parse_opcoes_net_data(raw_data):
     
     df['expiry'] = df['ticker'].apply(extract_expiry_from_ticker)
     
-    # Normalize Type
-    df['type'] = df['type'].str.upper()
+    # Normalize Type - handle various formats
+    df['type'] = df['type'].str.strip().str.upper()
     
-    # Filter out rows without valid strike or type
+    # Debug: print unique types found
+    print(f"[DEBUG] Unique type values: {df['type'].unique().tolist()}")
+    print(f"[DEBUG] Sample strikes: {df['strike'].head().tolist()}")
+    print(f"[DEBUG] Rows before filter: {len(df)}")
+    
+    # Filter out rows without valid strike
     df = df[df['strike'] > 0]
+    print(f"[DEBUG] Rows after strike filter: {len(df)}")
+    
+    # More flexible type matching - check if 'CALL' or 'PUT' is contained
+    def normalize_type(t):
+        t = str(t).upper().strip()
+        if 'CALL' in t or t == 'C':
+            return 'CALL'
+        elif 'PUT' in t or t == 'P':
+            return 'PUT'
+        return t
+    
+    df['type'] = df['type'].apply(normalize_type)
     df = df[df['type'].isin(['CALL', 'PUT'])]
+    print(f"[DEBUG] Rows after type filter: {len(df)}")
     
     return df
 
