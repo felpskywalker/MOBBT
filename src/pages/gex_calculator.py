@@ -101,7 +101,7 @@ def render():
     st.markdown("---")
     
     # Controles
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+    col1, col2, col3, col4, col5 = st.columns([1.2, 1, 0.8, 0.8, 1.5])
     
     with col1:
         ticker = st.text_input(
@@ -120,14 +120,12 @@ def render():
         )
     
     with col3:
-        chart_type = st.radio(
-            "Visualização",
-            options=["Gamma Exposure", "Open Interest"],
-            horizontal=True,
-            help="Tipo de gráfico a exibir"
-        )
+        show_gex = st.toggle("📊 GEX", value=True, help="Mostrar gráfico de Gamma Exposure")
     
     with col4:
+        show_oi = st.toggle("📈 OI", value=True, help="Mostrar gráfico de Open Interest")
+    
+    with col5:
         st.write("")  # Espaçamento
         st.write("")
         calcular = st.button("🔄 Calcular", type="primary", use_container_width=True)
@@ -275,16 +273,20 @@ def render():
         else:
             st.warning("📉 **Regime Negativo**: Spot abaixo do Flip Point. Mercado tende a ser mais volátil.")
         
-        # Gráfico principal - baseado na seleção
+        # Gráficos - baseado nos toggles
         try:
-            if chart_type == "Gamma Exposure":
+            if show_gex:
                 title = f"Market Gamma - {ticker} ({reference_date})"
-                fig = create_market_gamma_chart(gex_by_strike, spot_price, title)
-                st.plotly_chart(fig, use_container_width=True, key="gex_main_chart")
-            else:  # Open Interest
+                fig_gex = create_market_gamma_chart(gex_by_strike, spot_price, title)
+                st.plotly_chart(fig_gex, use_container_width=True, key="gex_main_chart")
+            
+            if show_oi:
                 title = f"Open Interest - {ticker} ({reference_date})"
-                fig = create_open_interest_chart(options_df, spot_price, title, bucket_size)
-                st.plotly_chart(fig, use_container_width=True, key="oi_main_chart")
+                fig_oi = create_open_interest_chart(options_df, spot_price, title, bucket_size)
+                st.plotly_chart(fig_oi, use_container_width=True, key="oi_main_chart")
+            
+            if not show_gex and not show_oi:
+                st.info("👆 Ative pelo menos um gráfico nos toggles acima.")
         except Exception as e:
             st.error(f"❌ Erro ao gerar gráfico: {e}")
         
