@@ -415,6 +415,8 @@ def calculate_gex_dataframe(
 
     # Count IVs available before fallback
     iv_from_market = (df['iv'].notna() & (df['iv'] > 0.001)).sum()
+    total_options = len(df)
+    print(f"[IV] Options with valid IV before fallback: {iv_from_market}/{total_options}")
     
     # Second pass: Approximate IV for options without valid IV using nearest strike
     def get_fallback_iv(row):
@@ -422,21 +424,22 @@ def calculate_gex_dataframe(
         if pd.notna(row['iv']) and row['iv'] > 0.001:
             return row['iv'], row.get('iv_source', 'SOURCE')
         
-        # Find options of same type AND same expiry with valid IV (best match)
-        same_expiry_type = df[
-            (df['type'] == row['type']) & 
-            (df['expiry'] == row['expiry']) &
-            (df['iv'].notna()) &
-            (df['iv'] > 0.001)
-        ]
-        
-        if not same_expiry_type.empty:
-            # Find nearest strike with valid IV
-            strike_diffs = abs(same_expiry_type['strike'] - row['strike'])
-            nearest_idx = strike_diffs.idxmin()
-            nearest_iv = df.loc[nearest_idx, 'iv']
-            if pd.notna(nearest_iv) and nearest_iv > 0.001:
-                return nearest_iv, 'NEAREST'
+        # Find options of same type with valid IV
+        # First try same expiry if expiry is valid
+        if pd.notna(row.get('expiry')):
+            same_expiry_type = df[
+                (df['type'] == row['type']) & 
+                (df['expiry'] == row['expiry']) &
+                (df['iv'].notna()) &
+                (df['iv'] > 0.001)
+            ]
+            
+            if not same_expiry_type.empty:
+                strike_diffs = abs(same_expiry_type['strike'] - row['strike'])
+                nearest_idx = strike_diffs.idxmin()
+                nearest_iv = df.loc[nearest_idx, 'iv']
+                if pd.notna(nearest_iv) and nearest_iv > 0.001:
+                    return nearest_iv, 'NEAREST'
         
         # Fallback: same type, any expiry
         same_type_with_iv = df[
@@ -460,8 +463,9 @@ def calculate_gex_dataframe(
     df['iv_source'] = fallback_results.apply(lambda x: x[1])
     
     # Final safety: Fill any remaining invalid IVs with default volatility
-    df.loc[(df['iv'].isna()) | (df['iv'] <= 0.001), 'iv_source'] = 'DEFAULT'
-    df.loc[(df['iv'].isna()) | (df['iv'] <= 0.001), 'iv'] = volatility
+    invalid_iv_mask = (df['iv'].isna()) | (df['iv'] <= 0.001)
+    df.loc[invalid_iv_mask, 'iv_source'] = 'DEFAULT'
+    df.loc[invalid_iv_mask, 'iv'] = volatility
     
     # Log IV statistics
     iv_from_nearest = (df['iv_source'] == 'NEAREST').sum()
