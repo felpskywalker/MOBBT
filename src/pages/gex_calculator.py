@@ -112,9 +112,23 @@ def render():
         with st.spinner(f"Buscando opções de {ticker} em opcoes.net.br..."):
             try:
                 raw_data = fetch_opcoes_net_data(ticker)
+                
+                # Debug info
+                if raw_data:
+                    st.info(f"📊 Dados brutos: {len(raw_data)} linhas extraídas")
+                else:
+                    st.warning(f"⚠️ Nenhum dado bruto extraído do site")
+                
                 options_df = parse_opcoes_net_data(raw_data)
+                
+                # Debug: show if filtering removed data
+                if raw_data and options_df.empty:
+                    st.warning("⚠️ Dados foram extraídos mas filtrados na validação")
+                    
             except Exception as e:
                 st.error(f"❌ Erro ao buscar opções: {e}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.info("💡 O scraping pode estar bloqueado ou o site indisponível.")
                 return
         
