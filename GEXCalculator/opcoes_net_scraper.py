@@ -17,17 +17,69 @@ from datetime import datetime
 import re
 
 def get_chrome_driver() -> webdriver.Chrome:
-    """Create and configure Chrome WebDriver."""
+    """Create and configure Chrome WebDriver.
+    
+    Supports both:
+    - Local development with webdriver-manager
+    - Streamlit Cloud with system-installed Chromium
+    """
+    import shutil
+    import os
+    
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")  # Use headless mode for production
     chrome_options.add_argument("--window-size=1920,1080")
-    # chrome_options.add_argument("--start-maximized") # Maximize to ensure elements are visible
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-software-rasterizer")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
-    service = Service(ChromeDriverManager().install())
+    # Check for system Chromium (Streamlit Cloud / Linux)
+    chromium_paths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable'
+    ]
+    
+    chromedriver_paths = [
+        '/usr/bin/chromedriver',
+        '/usr/lib/chromium/chromedriver',
+        '/usr/lib/chromium-browser/chromedriver'
+    ]
+    
+    # Find Chromium binary
+    chromium_binary = None
+    for path in chromium_paths:
+        if os.path.exists(path):
+            chromium_binary = path
+            break
+    
+    # Find ChromeDriver
+    chromedriver_path = None
+    for path in chromedriver_paths:
+        if os.path.exists(path):
+            chromedriver_path = path
+            break
+    
+    # Also check with shutil.which
+    if not chromedriver_path:
+        chromedriver_path = shutil.which('chromedriver')
+    
+    if chromium_binary:
+        chrome_options.binary_location = chromium_binary
+        print(f"[SELENIUM] Using system Chromium: {chromium_binary}")
+    
+    if chromedriver_path:
+        print(f"[SELENIUM] Using system ChromeDriver: {chromedriver_path}")
+        service = Service(chromedriver_path)
+    else:
+        # Fallback to webdriver-manager (local development)
+        print("[SELENIUM] Using webdriver-manager for ChromeDriver")
+        service = Service(ChromeDriverManager().install())
+    
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
