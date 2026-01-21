@@ -174,6 +174,7 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
         # Indices verified via browser inspection:
         # 0: Ticker, 1: Vencimento (Expiry date), 2: Dias úteis, 3: Tipo (CALL/PUT)
         # 6: Strike, 9: Último (Price), 10: Var.(%), 14: Vol.Impl. (IV)
+        # 15: Delta, 16: Gamma, 17: Theta($), 18: Theta(%), 19: Vega
         # 21: Cob, 22: Trav, 23: Descob
         extraction_script = """
         return (() => {
@@ -189,7 +190,11 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
                     const type_raw = cells[3].innerText.trim();
                     const strike_raw = cells[6].innerText.trim();
                     const iv_raw = cells[14].innerText.trim();
-                    const last_price = cells[9].innerText.trim();  // Index 9 = Último, NOT 10 (Var.%)
+                    const last_price = cells[9].innerText.trim();  // Index 9 = Último
+                    
+                    // Greeks from the site
+                    const delta_raw = cells[15].innerText.trim();
+                    const gamma_raw = cells[16].innerText.trim();
                     
                     // Open Interest components
                     const cob = cells[21].innerText.trim();
@@ -204,6 +209,8 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
                             type: type_raw,
                             strike: strike_raw,
                             iv: iv_raw,
+                            delta: delta_raw,
+                            gamma: gamma_raw,
                             cob: cob,
                             trav: trav,
                             descob: descob,
@@ -247,6 +254,16 @@ def parse_opcoes_net_data(raw_data):
     
     # Clean IV - handle percentage format
     df['iv'] = df['iv'].apply(clean_number) / 100.0  # Convert 35.4 to 0.354
+    
+    # Clean Greeks from site (gamma and delta)
+    if 'gamma' in df.columns:
+        df['gamma_site'] = df['gamma'].apply(clean_number)
+        # Mark invalid gamma (0 means no data)
+        df['gamma_site'] = df['gamma_site'].apply(lambda x: x if x > 0 else None)
+        print(f"[DEBUG] Gamma from site - valid: {df['gamma_site'].notna().sum()}/{len(df)}")
+    
+    if 'delta' in df.columns:
+        df['delta_site'] = df['delta'].apply(clean_number)
     
     # Mark invalid market prices (0 or negative are invalid for option prices)
     df['market_price'] = df['market_price'].apply(lambda x: x if x > 0 else None)

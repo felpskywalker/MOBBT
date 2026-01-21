@@ -492,31 +492,61 @@ def calculate_gex_dataframe(
     except Exception as e:
         print(f"[IV] Could not calculate weighted IV: {e}")
     
-    # Calculate gamma for each option using its own IV
-    df['gamma'] = df.apply(
-        lambda row: calculate_gamma(
-            S=spot,
-            K=row['strike'],
-            T=row['time_to_expiry'],
-            r=risk_free_rate,
-            sigma=row['iv']
-        ),
-        axis=1
-    )
+    # Use gamma from site if available, otherwise calculate via Black-Scholes
+    if 'gamma_site' in df.columns:
+        # Count how many have valid gamma from site
+        valid_gamma_site = df['gamma_site'].notna().sum()
+        print(f"[GAMMA] Using gamma from opcoes.net: {valid_gamma_site}/{len(df)} options")
+        
+        # Use site gamma when available, calculate when not
+        def get_gamma(row):
+            if pd.notna(row.get('gamma_site')) and row['gamma_site'] > 0:
+                return row['gamma_site']
+            # Fallback: calculate via Black-Scholes
+            return calculate_gamma(
+                S=spot,
+                K=row['strike'],
+                T=row['time_to_expiry'],
+                r=risk_free_rate,
+                sigma=row['iv']
+            )
+        
+        df['gamma'] = df.apply(get_gamma, axis=1)
+        df['gamma_source'] = df.apply(
+            lambda row: 'SITE' if pd.notna(row.get('gamma_site')) and row['gamma_site'] > 0 else 'CALCULATED',
+            axis=1
+        )
+        
+        # Log gamma source stats
+        from_site = (df['gamma_source'] == 'SITE').sum()
+        from_calc = (df['gamma_source'] == 'CALCULATED').sum()
+        print(f"[GAMMA] From site: {from_site}, Calculated: {from_calc}")
+    else:
+        # No gamma from site, calculate all via Black-Scholes
+        print("[GAMMA] No gamma from site, calculating all via Black-Scholes")
+        df['gamma'] = df.apply(
+            lambda row: calculate_gamma(
+                S=spot,
+                K=row['strike'],
+                T=row['time_to_expiry'],
+                r=risk_free_rate,
+                sigma=row['iv']
+            ),
+            axis=1
+        )
+        df['gamma_source'] = 'CALCULATED'
     
-    # Calculate GEX for each option
-    df['gex'] = df.apply(
-        lambda row: calculate_option_gex(
-            spot=spot,
-            strike=row['strike'],
-            time_to_expiry=row['time_to_expiry'],
-            open_interest=row['open_interest'],
-            option_type=row['type'],
-            risk_free_rate=risk_free_rate,
-            volatility=row['iv']
-        ),
-        axis=1
-    )
+    # Calculate GEX for each option using the gamma (from site or calculated)
+    # Formula: GEX = Gamma * OI * Contract_Multiplier * Spot^2 * 0.01
+    # Sign convention: Calls positive, Puts negative (dealer short puts, long calls assumption)
+    def calc_gex_from_gamma(row):
+        gex = row['gamma'] * row['open_interest'] * CONTRACT_MULTIPLIER * (spot ** 2) * 0.01
+        # Apply sign: Calls positive, Puts negative
+        if row['type'] == 'PUT':
+            gex = -gex
+        return gex
+    
+    df['gex'] = df.apply(calc_gex_from_gamma, axis=1)
     
     return df
 

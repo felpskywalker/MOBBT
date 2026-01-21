@@ -208,7 +208,22 @@ def render():
             return
         
         # Debug: Show IV statistics
-        with st.expander("🔍 Debug: Estatísticas de IV"):
+        with st.expander("🔍 Debug: Estatísticas de IV e Gamma"):
+            # Gamma source statistics
+            if 'gamma_source' in gex_df.columns:
+                st.subheader("📐 Fonte do Gamma")
+                gamma_col1, gamma_col2 = st.columns(2)
+                with gamma_col1:
+                    from_site = (gex_df['gamma_source'] == 'SITE').sum()
+                    st.metric("Gamma do Opcoes.net", f"{from_site}", help="Gamma extraído diretamente do site")
+                with gamma_col2:
+                    from_calc = (gex_df['gamma_source'] == 'CALCULATED').sum()
+                    st.metric("Gamma Calculado (BS)", f"{from_calc}", help="Gamma calculado via Black-Scholes")
+                
+                st.markdown("---")
+            
+            # IV statistics
+            st.subheader("📊 Fonte da IV")
             if 'iv' in gex_df.columns and 'iv_source' in gex_df.columns:
                 iv_stats_col1, iv_stats_col2, iv_stats_col3 = st.columns(3)
                 with iv_stats_col1:
