@@ -169,93 +169,70 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
             last_height = new_height
             attempts += 1
             
-        # Javascript extraction - USE COLUMN HEADERS to find correct indices
-        # This is necessary because the table renders with different column order
-        # on different browsers/environments (headless vs desktop)
+        # Use DataTables API directly - much more reliable than DOM scraping
+        # The API returns the data in the original format, bypassing rendering differences
         extraction_script = """
         return (() => {
-            // First, find all header columns to map names to indices
-            const headerRow = document.querySelector('.dt-scroll-headInner thead tr, .dataTables_scrollHeadInner thead tr, thead tr');
-            const headers = headerRow ? Array.from(headerRow.querySelectorAll('th')).map(th => th.innerText.trim().toLowerCase()) : [];
-            
-            console.log('Headers found:', headers);
-            
-            // Define column name patterns to look for
-            const colPatterns = {
-                ticker: ['modelo', 'ticker', 'código'],
-                type: ['tipo'],
-                strike: ['strike'],
-                price: ['último', 'ultimo', 'preço', 'preco'],
-                iv: ['vol. impl', 'volatilidade', 'iv'],
-                cob: ['coberto', 'cob'],
-                trav: ['travado', 'trav'],
-                descob: ['descoberto', 'descob']
-            };
-            
-            // Find column index for each field
-            function findColIndex(patterns) {
-                for (let i = 0; i < headers.length; i++) {
-                    for (let pattern of patterns) {
-                        if (headers[i].includes(pattern)) return i;
-                    }
-                }
-                return -1;
-            }
-            
-            const cols = {
-                ticker: findColIndex(colPatterns.ticker),
-                type: findColIndex(colPatterns.type),
-                strike: findColIndex(colPatterns.strike),
-                price: findColIndex(colPatterns.price),
-                iv: findColIndex(colPatterns.iv),
-                cob: findColIndex(colPatterns.cob),
-                trav: findColIndex(colPatterns.trav),
-                descob: findColIndex(colPatterns.descob)
-            };
-            
-            console.log('Column indices:', cols);
-            
-            // Fallback to hardcoded indices if headers not found
-            if (cols.ticker === -1) cols.ticker = 0;
-            if (cols.type === -1) cols.type = 1;
-            if (cols.strike === -1) cols.strike = 4;
-            if (cols.price === -1) cols.price = 7;
-            if (cols.iv === -1) cols.iv = 12;
-            if (cols.cob === -1) cols.cob = 19;
-            if (cols.trav === -1) cols.trav = 20;
-            if (cols.descob === -1) cols.descob = 21;
-            
-            const rows = document.querySelectorAll('.dt-scroll-body tbody tr');
-            const data = [];
-            
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length > 10) {
-                    const ticker = cells[cols.ticker] ? cells[cols.ticker].innerText.trim() : '';
-                    const type_raw = cells[cols.type] ? cells[cols.type].innerText.trim() : '';
-                    const strike_raw = cells[cols.strike] ? cells[cols.strike].innerText.trim() : '';
-                    const last_price = cells[cols.price] ? cells[cols.price].innerText.trim() : '';
-                    const iv_raw = cells[cols.iv] ? cells[cols.iv].innerText.trim() : '';
-                    const cob = cells[cols.cob] ? cells[cols.cob].innerText.trim() : '0';
-                    const trav = cells[cols.trav] ? cells[cols.trav].innerText.trim() : '0';
-                    const descob = cells[cols.descob] ? cells[cols.descob].innerText.trim() : '0';
-                    
-                    // Only add if we got valid ticker (starts with expected pattern)
-                    if (ticker && ticker.match(/^[A-Z]{4,5}/)) {
-                        data.push({
+            try {
+                // Try to use DataTables API directly
+                const table = $('table.dataTable').DataTable();
+                const allData = table.rows().data().toArray();
+                
+                // Column mapping (based on known structure):
+                // 0: Ticker, 1: Tipo, 2: F.M., 3: Mod., 4: Strike,
+                // 5: A/I/OTM, 6: Dist.%, 7: Último, 8: Var.%,
+                // 9: Data/Hora, 10: Núm.Neg., 11: Vol.Fin., 12: Vol.Impl.%,
+                // 13-18: Greeks, 19: Coberto, 20: Travado, 21: Descob.
+                
+                const results = [];
+                for (const row of allData) {
+                    if (row.length > 20) {
+                        const ticker = String(row[0] || '').trim();
+                        // Skip if not a valid ticker
+                        if (!ticker.match(/^[A-Z]{4,5}/)) continue;
+                        
+                        results.push({
                             ticker: ticker,
-                            type: type_raw,
-                            strike: strike_raw,
-                            iv: iv_raw,
-                            cob: cob,
-                            trav: trav,
-                            descob: descob,
-                            last_price: last_price
+                            type: String(row[1] || '').trim(),
+                            strike: String(row[4] || '').trim(),
+                            last_price: String(row[7] || '').trim(),
+                            iv: String(row[12] || '').trim(),
+                            cob: String(row[19] || '0').trim(),
+                            trav: String(row[20] || '0').trim(),
+                            descob: String(row[21] || '0').trim()
                         });
                     }
                 }
-            });
-            return data;
+                return results;
+                
+            } catch(e) {
+                // Fallback to DOM scraping if DataTables API not available
+                console.log('DataTables API failed, using DOM fallback:', e);
+                
+                const rows = document.querySelectorAll('.dt-scroll-body tbody tr');
+                const data = [];
+                
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length > 20) {
+                        // Use fixed indices as last resort
+                        const ticker = cells[0].innerText.trim();
+                        if (!ticker.match(/^[A-Z]{4,5}/)) return;
+                        
+                        data.push({
+                            ticker: ticker,
+                            type: cells[1].innerText.trim(),
+                            strike: cells[4].innerText.trim(),
+                            last_price: cells[7].innerText.trim(),
+                            iv: cells[12].innerText.trim(),
+                            cob: cells[19].innerText.trim() || '0',
+                            trav: cells[20].innerText.trim() || '0',
+                            descob: cells[21].innerText.trim() || '0'
+                        });
+                    }
+                });
+                return data;
+            }
         })();
         """
         
