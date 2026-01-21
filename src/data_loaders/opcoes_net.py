@@ -153,9 +153,12 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
             last_height = new_height
             attempts += 1
             
-        print("Extracting table data...")
-        
         # Javascript extraction for speed and reliability
+        # Column indices based on opcoes.net.br table structure (January 2026):
+        # 0: Ticker, 1: Tipo (CALL/PUT), 2: F.M., 3: Mod., 4: Strike, 
+        # 5: A/I/OTM, 6: Dist.%, 7: Último (PRICE), 8: Var.%,
+        # 9: Data/Hora, 10: Núm.Neg., 11: Vol.Fin., 12: Vol.Impl.% (IV),
+        # 13-18: Greeks, 19: Cob, 20: Trav, 21: Descob
         extraction_script = """
         return (() => {
             const rows = document.querySelectorAll('.dt-scroll-body tbody tr');
@@ -164,29 +167,22 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
                 if (cells.length > 20) {
-                    // Indices based on analysis:
-                    // 0: Ticker (Modelo) -> BOVAB100
-                    // 1: FM (Vencimento) -> 20/02/2026
-                    // 3: Tipo -> CALL / PUT
-                    // 6: Strike -> 100,00
-                    // 14: Vol. Impl. (%) -> 35,4
-                    // 21: Cob
-                    // 22: Trav
-                    // 23: Descob
-                    
+                    // Correct column indices based on actual table structure
                     const ticker = cells[0].innerText.trim();
-                    const expiry = cells[1].innerText.trim();
-                    const type_raw = cells[3].innerText.trim();
-                    const strike_raw = cells[6].innerText.trim();
-                    const iv_raw = cells[14].innerText.trim();
+                    const type_raw = cells[1].innerText.trim();  // Tipo (CALL/PUT)
+                    const strike_raw = cells[4].innerText.trim();  // Strike
+                    const last_price = cells[7].innerText.trim();  // Último (actual price, positive)
+                    const iv_raw = cells[12].innerText.trim();  // Vol. Impl. (%)
                     
                     // Open Interest components
-                    const cob = cells[21].innerText.trim();
-                    const trav = cells[22].innerText.trim();
-                    const descob = cells[23].innerText.trim();
+                    const cob = cells[19].innerText.trim();
+                    const trav = cells[20].innerText.trim();
+                    const descob = cells[21].innerText.trim();
                     
-                    // Market Price (Last)
-                    const last_price = cells[10].innerText.trim();
+                    // Get expiry from ticker format or from date/time if available
+                    // For now, we'll need to extract from ticker series code
+                    // The table doesn't have a clear expiry column, we'll parse it
+                    const expiry = cells[9].innerText.trim();  // Data/Hora - may contain date info
                     
                     data.push({
                         ticker: ticker,
@@ -224,6 +220,7 @@ def clean_number(val):
         return 0.0
 
 def parse_opcoes_net_data(raw_data):
+    """Parse raw scraped data into a clean DataFrame."""
     if not raw_data:
         return pd.DataFrame()
         
@@ -231,21 +228,102 @@ def parse_opcoes_net_data(raw_data):
     
     # Clean numeric columns
     df['strike'] = df['strike'].apply(clean_number)
-    df['iv'] = df['iv'].apply(clean_number) / 100.0 # Convert 35.4 to 0.354
     df['market_price'] = df['last_price'].apply(clean_number)
+    
+    # Clean IV - handle percentage format
+    df['iv'] = df['iv'].apply(clean_number) / 100.0  # Convert 35.4 to 0.354
+    
+    # Mark invalid market prices (0 or negative are invalid for option prices)
+    df['market_price'] = df['market_price'].apply(lambda x: x if x > 0 else None)
+    
+    # Mark invalid IV (0% means no IV data)
+    df['iv'] = df['iv'].apply(lambda x: x if x > 0.001 else None)
     
     # Calculate Total Open Interest
     df['cob'] = df['cob'].apply(clean_number)
     df['trav'] = df['trav'].apply(clean_number)
     df['descob'] = df['descob'].apply(clean_number)
-    df['open_interest'] = df['cob'] + df['trav'] + df['descob']
+    df['open_interest'] = (df['cob'] + df['trav'] + df['descob']).astype(int)
     
-    # Clean Expiry
-    # Format usually DD/MM/YYYY
-    df['expiry'] = pd.to_datetime(df['expiry'], format='%d/%m/%Y', errors='coerce')
+    # Extract expiry from ticker code
+    # BOVA options use: BOVA[A-L] for calls (Jan-Dec), BOVA[M-X] for puts (Jan-Dec)
+    # Weekly options have W[1-5] suffix, e.g., BOVAB158W4
+    # We need to map the month letter + year to actual dates
+    def extract_expiry_from_ticker(ticker):
+        """Extract expiry date from Brazilian option ticker."""
+        if not ticker or len(ticker) < 5:
+            return None
+        
+        # Standard format: BASE + MONTH_LETTER + STRIKE + optional WEEK
+        # e.g., BOVAB158 = BOVA11 Call February Strike ~158
+        #       BOVAN120 = BOVA11 Put February Strike ~120
+        #       BOVAB158W4 = Weekly expiry (4th week)
+        
+        # Month codes: A-L for Calls (Jan-Dec), M-X for Puts (Jan-Dec)
+        call_months = 'ABCDEFGHIJKL'
+        put_months = 'MNOPQRSTUVWX'
+        
+        # Find the month letter (should be after the base ticker)
+        # BOVA is 4 chars, so month is at position 4
+        if len(ticker) < 5:
+            return None
+            
+        month_char = ticker[4].upper()
+        
+        # Determine month
+        if month_char in call_months:
+            month = call_months.index(month_char) + 1
+        elif month_char in put_months:
+            month = put_months.index(month_char) + 1
+        else:
+            return None
+        
+        # Assume current year or next year if month has passed
+        from datetime import datetime
+        current_year = datetime.now().year
+        current_month = datetime.now().month
+        
+        if month < current_month:
+            year = current_year + 1
+        else:
+            year = current_year
+        
+        # Check for weekly suffix (W1, W2, etc.)
+        is_weekly = 'W' in ticker
+        if is_weekly:
+            # Weekly options expire on Fridays of the specified week
+            # W1 = 1st Friday, W2 = 2nd Friday, etc.
+            try:
+                week_num = int(ticker.split('W')[-1][0])
+                # Find the Nth Friday of the month
+                import calendar
+                first_day = datetime(year, month, 1)
+                # Find first Friday
+                first_friday = 1 + (4 - first_day.weekday()) % 7
+                expiry_day = first_friday + (week_num - 1) * 7
+                # Clamp to valid range
+                max_day = calendar.monthrange(year, month)[1]
+                expiry_day = min(expiry_day, max_day)
+                return datetime(year, month, expiry_day)
+            except:
+                pass
+        
+        # Standard monthly expiry (3rd Friday of the month)
+        import calendar
+        first_day = datetime(year, month, 1)
+        first_friday = 1 + (4 - first_day.weekday()) % 7
+        third_friday = first_friday + 14
+        
+        return datetime(year, month, third_friday)
+    
+    df['expiry'] = df['ticker'].apply(extract_expiry_from_ticker)
     
     # Normalize Type
     df['type'] = df['type'].str.upper()
+    
+    # Filter out rows without valid strike or type
+    df = df[df['strike'] > 0]
+    df = df[df['type'].isin(['CALL', 'PUT'])]
     
     return df
 
