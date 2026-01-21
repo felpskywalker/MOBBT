@@ -18,10 +18,7 @@ try:
 except ImportError:
     BCB_AVAILABLE = False
 
-try:
-    from black_scholes import calculate_gamma, calculate_implied_volatility
-except ImportError:
-    from GEXCalculator.black_scholes import calculate_gamma, calculate_implied_volatility
+from src.models.black_scholes import calculate_gamma, calculate_implied_volatility
 
 
 # Default parameters (fallback if API fails)

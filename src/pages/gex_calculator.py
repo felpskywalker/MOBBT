@@ -7,17 +7,10 @@ import streamlit as st
 import yfinance as yf
 from datetime import datetime, timedelta
 import pandas as pd
-import sys
-import os
 
-# Add GEXCalculator to path for imports
-gex_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'GEXCalculator')
-if gex_path not in sys.path:
-    sys.path.insert(0, gex_path)
-
-from opcoes_net_scraper import fetch_opcoes_net_data, parse_opcoes_net_data
-from gex_calculator import calculate_gex_dataframe, aggregate_gex_by_strike, get_selic_rate
-from visualization import create_market_gamma_chart, create_metrics_panel, calculate_metrics
+from src.data_loaders.opcoes_net import fetch_opcoes_net_data, parse_opcoes_net_data
+from src.models.gex_calculator import calculate_gex_dataframe, aggregate_gex_by_strike, get_selic_rate
+from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics
 
 
 def get_spot_price(ticker: str) -> float:
