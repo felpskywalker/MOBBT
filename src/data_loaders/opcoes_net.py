@@ -307,6 +307,165 @@ def parse_opcoes_net_data(raw_data):
     
     return df
 
+
+# ============================================================
+# FUNÇÕES PARA TERM STRUCTURE E SKEW (VOLATILITY SURFACE)
+# ============================================================
+
+def get_term_structure_from_opcoes_net(ticker: str, spot_price: float = None) -> pd.DataFrame:
+    """
+    Extrai a estrutura a termo da IV usando dados do opcoes.net.
+    Retorna IV ATM para cada vencimento disponível.
+    
+    Args:
+        ticker: Ticker do ativo (ex: BOVA11)
+        spot_price: Preço spot para determinar ATM (opcional, usa strike mais próximo)
+    
+    Returns:
+        DataFrame com columns: expiry, days_to_exp, iv_put, iv_call, iv_avg, strike_atm
+    """
+    from datetime import datetime
+    
+    # Buscar dados brutos
+    raw_data = fetch_opcoes_net_data(ticker)
+    if not raw_data:
+        return pd.DataFrame()
+    
+    df = parse_opcoes_net_data(raw_data)
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Determinar spot price se não fornecido
+    if spot_price is None or spot_price <= 0:
+        # Usar strike médio como proxy
+        spot_price = df['strike'].median()
+    
+    results = []
+    
+    # Agrupar por vencimento
+    for expiry, group in df.groupby('expiry'):
+        if pd.isna(expiry):
+            continue
+        
+        # Calcular dias até vencimento
+        days_to_exp = (expiry.date() - datetime.now().date()).days
+        if days_to_exp <= 0:
+            continue
+        
+        # Encontrar strike ATM (mais próximo do spot)
+        group = group.copy()
+        group['dist_to_spot'] = abs(group['strike'] - spot_price)
+        atm_strike = group.loc[group['dist_to_spot'].idxmin(), 'strike']
+        
+        # Filtrar opções ATM (dentro de 2% do spot)
+        atm_range = spot_price * 0.02
+        atm_options = group[abs(group['strike'] - atm_strike) <= atm_range]
+        
+        # Separar CALLs e PUTs
+        calls = atm_options[atm_options['type'] == 'CALL']
+        puts = atm_options[atm_options['type'] == 'PUT']
+        
+        # Pegar IV média dos ATM
+        iv_call = calls['iv'].dropna().mean() if not calls.empty else None
+        iv_put = puts['iv'].dropna().mean() if not puts.empty else None
+        
+        # IV média (prioriza PUT pois geralmente mais líquida em índices)
+        if iv_put and iv_put > 0:
+            iv_avg = iv_put
+        elif iv_call and iv_call > 0:
+            iv_avg = iv_call
+        else:
+            continue  # Sem IV válida
+        
+        results.append({
+            'expiry': expiry,
+            'days_to_exp': days_to_exp,
+            'iv_put': iv_put * 100 if iv_put else None,  # Convert to %
+            'iv_call': iv_call * 100 if iv_call else None,
+            'iv': iv_avg * 100,  # IV principal (PUT ou média)
+            'strike_atm': atm_strike
+        })
+    
+    result_df = pd.DataFrame(results)
+    if not result_df.empty:
+        result_df = result_df.sort_values('days_to_exp').reset_index(drop=True)
+    
+    return result_df
+
+
+def get_volatility_skew_from_opcoes_net(
+    ticker: str, 
+    spot_price: float = None,
+    expiry_months: int = 1,
+    option_types: list = ['PUT', 'CALL']
+) -> pd.DataFrame:
+    """
+    Extrai o volatility skew usando dados do opcoes.net.
+    Retorna IV para diferentes strikes de um vencimento específico.
+    
+    Args:
+        ticker: Ticker do ativo (ex: BOVA11)
+        spot_price: Preço spot para calcular moneyness
+        expiry_months: Qual vencimento usar (1 = próximo, 2 = segundo, etc)
+        option_types: Lista de tipos a incluir ['PUT'], ['CALL'], ou ['PUT', 'CALL']
+    
+    Returns:
+        DataFrame com columns: strike, moneyness, iv, type, ticker, expiry
+    """
+    from datetime import datetime
+    
+    # Buscar dados brutos
+    raw_data = fetch_opcoes_net_data(ticker)
+    if not raw_data:
+        return pd.DataFrame()
+    
+    df = parse_opcoes_net_data(raw_data)
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Determinar spot price se não fornecido
+    if spot_price is None or spot_price <= 0:
+        spot_price = df['strike'].median()
+    
+    # Ordenar vencimentos e pegar o desejado
+    expiries = sorted(df['expiry'].dropna().unique())
+    if len(expiries) < expiry_months:
+        return pd.DataFrame()
+    
+    target_expiry = expiries[expiry_months - 1]
+    
+    # Filtrar pelo vencimento e tipos
+    mask = (df['expiry'] == target_expiry) & (df['type'].isin(option_types))
+    filtered = df[mask].copy()
+    
+    if filtered.empty:
+        return pd.DataFrame()
+    
+    # Filtrar apenas opções com IV válida
+    filtered = filtered[filtered['iv'].notna() & (filtered['iv'] > 0.001)]
+    
+    # Calcular moneyness (% distância do spot)
+    filtered['moneyness'] = ((filtered['strike'] / spot_price) - 1) * 100
+    filtered['moneyness_pct'] = (filtered['strike'] / spot_price) * 100
+    
+    # Calcular dias até vencimento
+    days_to_exp = (target_expiry.date() - datetime.now().date()).days
+    
+    # Filtrar strikes muito distantes (80% a 120% do spot)
+    filtered = filtered[(filtered['moneyness_pct'] >= 80) & (filtered['moneyness_pct'] <= 120)]
+    
+    # Preparar resultado
+    result = filtered[['strike', 'moneyness', 'moneyness_pct', 'iv', 'type', 'ticker']].copy()
+    result['iv'] = result['iv'] * 100  # Convert to %
+    result['expiry'] = target_expiry
+    result['days_to_exp'] = days_to_exp
+    result['spot_price'] = spot_price
+    
+    result = result.sort_values(['type', 'strike']).reset_index(drop=True)
+    
+    return result
+
+
 if __name__ == "__main__":
     print("Testing Opcoes.net.br Scraper...")
     raw = fetch_opcoes_net_data()
