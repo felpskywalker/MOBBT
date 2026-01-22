@@ -470,270 +470,135 @@ def render_diagnostico(iv_rank_atual, mm21, mm63):
     st.markdown("---")
 
 
-def render_term_structure():
-    """Renderiza seção Term Structure"""
-    st.subheader("📈 Estrutura a Termo da IV (Term Structure)")
+def render_opcoes_net_analysis():
+    """Renderiza análise de IV usando dados do opcoes.net (Term Structure + Skew)"""
+    st.subheader("📊 Análise de IV - Opcoes.net")
     
-    with st.expander("ℹ️ **O que é a Estrutura a Termo da Volatilidade?**", expanded=False):
+    with st.expander("ℹ️ **O que são Term Structure e Volatility Skew?**", expanded=False):
         st.markdown("""
-        ### Term Structure da Volatilidade Implícita
+        ### Term Structure (Estrutura a Termo)
+        Mostra como a IV varia entre **diferentes vencimentos** para opções ATM.
+        - **Contango** (curva ascendente): Mercado calmo
+        - **Backwardation** (curva descendente): Mercado em stress
         
-        A **Estrutura a Termo** mostra como a volatilidade implícita varia entre diferentes vencimentos 
-        de opções. É a "curva de juros" da volatilidade.
-        
-        #### Formatos da curva:
-        
-        📈 **Contango (curva ascendente)** - IV aumenta com o tempo:
-        - Estado **normal** do mercado
-        - Incerteza de longo prazo maior que curto prazo
-        - Mercado "calmo" no curto prazo
-        
-        📉 **Backwardation (curva descendente)** - IV diminui com o tempo:
-        - Estado de **stress** do mercado
-        - Medo concentrado no curto prazo
-        - Geralmente ocorre durante crises ou eventos
-        
-        ➡️ **Flat (curva plana)** - IV similar em todos os vencimentos:
-        - Transição entre regimes
-        - Incerteza generalizada
-        
-        #### Como usar:
-        - **Entrada em backwardation**: Sinal de alerta
-        - **Saída de backwardation para contango**: Possível fim do stress
-        - **Steepness da curva**: Inclinação indica intensidade do regime
+        ### Volatility Skew (Inclinação)
+        Mostra como a IV varia entre **diferentes strikes** para um mesmo vencimento.
+        - **Smirk**: PUTs OTM têm IV maior (demanda por proteção)
+        - **Smile**: IV maior nos extremos (incerteza bilateral)
         """)
     
-    # Inputs
-    col_term1, col_term2 = st.columns([1, 3])
-    with col_term1:
-        term_asset = st.text_input("Ativo para Term Structure", value="BOVA11", key="term_struct_asset_input",
-                                   help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
-    with col_term2:
-        st.write("")  # Espaçamento
-        term_calcular = st.button("🔄 Calcular", key="term_calc_btn", type="primary")
-    
-    if term_asset and term_calcular:
-        # Inicialização de variáveis de estado para renderização
-        df_term = pd.DataFrame()
-        error_msg = None
-        trace_msg = None
-        warning_msg = None
-
-        with st.spinner(f"Buscando opções de {term_asset} no opcoes.net.br..."):
-            try:
-                df_term = get_term_structure_from_opcoes_net(term_asset)
-                
-                if df_term.empty:
-                    warning_msg = f"Não foram encontradas opções ATM com liquidez para {term_asset}."
-
-            except Exception as e:
-                error_msg = f"Erro ao calcular Term Structure: {e}"
-                trace_msg = traceback.format_exc()
-
-        # Renderização da UI (FORA do spinner)
-        if error_msg:
-            with st.container():
-                st.error(error_msg)
-                if trace_msg:
-                    st.code(trace_msg, language="python")
-        elif warning_msg:
-            st.warning(warning_msg)
-        elif not df_term.empty:
-            with st.container():
-                col_chart, col_info = st.columns([3, 1])
-                
-                with col_chart:
-                    st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_struct_chart")
-                
-                with col_info:
-                    if 'strike_atm' in df_term.columns:
-                        st.metric("Strike ATM", f"R$ {df_term['strike_atm'].iloc[0]:.2f}")
-                    st.metric("Vencimentos", f"{len(df_term)}")
-                    
-                    if len(df_term) >= 2:
-                        slope = (df_term['iv'].iloc[-1] - df_term['iv'].iloc[0]) / \
-                               (df_term['days_to_exp'].iloc[-1] - df_term['days_to_exp'].iloc[0])
-                        if slope > 0.01:
-                            st.success("📈 **CONTANGO** - Curva normal")
-                        elif slope < -0.01:
-                            st.error("📉 **BACKWARDATION** - Stress")
-                        else:
-                            st.info("➡️ **FLAT** - Curva plana")
-                        
-                        st.metric("IV Curto Prazo", f"{df_term['iv'].iloc[0]:.1f}%")
-                        st.metric("IV Longo Prazo", f"{df_term['iv'].iloc[-1]:.1f}%")
-                
-                with st.expander("📋 Detalhes por Vencimento"):
-                    cols_to_show = ['expiry', 'days_to_exp', 'iv', 'strike_atm']
-                    cols_available = [c for c in cols_to_show if c in df_term.columns]
-                    df_display = df_term[cols_available].copy()
-                    
-                    col_names = {
-                        'expiry': 'Vencimento',
-                        'days_to_exp': 'Dias',
-                        'iv': 'IV (%)',
-                        'strike_atm': 'Strike ATM'
-                    }
-                    df_display = df_display.rename(columns=col_names)
-                    if 'Vencimento' in df_display.columns:
-                        df_display['Vencimento'] = df_display['Vencimento'].apply(
-                            lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '-'
-                        )
-                    if 'IV (%)' in df_display.columns:
-                        df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else '-')
-                    st.dataframe(df_display, hide_index=True, use_container_width=True, key="term_struct_df")
-    
-    st.markdown("---")
-
-
-def render_volatility_skew():
-    """Renderiza seção Volatility Skew"""
-    st.subheader("📐 Volatility Skew")
-    
-    with st.expander("ℹ️ **O que é Volatility Skew e como interpretar?**", expanded=False):
-        st.markdown("""
-        ### Volatility Skew (Inclinação da Volatilidade)
-        
-        O **Volatility Skew** mostra como a volatilidade implícita varia entre diferentes **strikes** 
-        para um **mesmo vencimento**. É também conhecido como "smile" ou "smirk" de volatilidade.
-        
-        #### Formatos típicos:
-        
-        😊 **Smile (U invertido)** - IV maior nos extremos:
-        - Comum em índices e commodities
-        - Investidores precificam eventos de cauda
-        
-        😏 **Smirk (inclinação negativa)** - IV maior em OTM:
-        - **Formato mais comum em ações e índices de ações**
-        - PUTs OTM (strike < spot) têm IV maior que CALLs OTM
-        - Reflete demanda por proteção contra quedas
-        
-        📏 **Flat (plano)** - IV similar em todos strikes:
-        - Raro na prática
-        - Pode indicar evento binário
-        
-        #### Como usar:
-        - Skew alto = proteção cara → vender PUTs OTM pode ser interessante
-        - Skew baixo = proteção barata → comprar proteção pode valer a pena
-        """)
-    
-    # Inputs
-    col1, col2, col3, col4 = st.columns([1.2, 1, 1, 0.8])
+    # Inputs unificados
+    col1, col2, col3, col4 = st.columns([1.5, 1, 1, 1])
     with col1:
-        skew_asset = st.text_input("Ativo para Skew Analysis", value="BOVA11", key="skew_asset",
-                                   help="Digite o ticker do ativo")
+        opcoes_asset = st.text_input("Ativo", value="BOVA11", key="opcoes_asset_input",
+                                     help="Digite o ticker do ativo (ex: BOVA11, VALE3, PETR4)")
     with col2:
-        skew_months = st.selectbox("Vencimento", options=[1, 2, 3, 4], index=0, key="skew_month_select",
-                                   format_func=lambda x: f"{x}º vencimento",
-                                   help="Selecione o vencimento")
+        skew_months = st.selectbox("Vencimento Skew", options=[1, 2, 3, 4], index=0, 
+                                   key="opcoes_skew_month",
+                                   format_func=lambda x: f"{x}º vencimento")
     with col3:
-        skew_type = st.selectbox("Tipo de Opção", 
+        skew_type = st.selectbox("Tipo Skew", 
                                  options=["Ambos", "PUTs", "CALLs"], 
-                                 index=0, key="skew_type_select",
-                                 help="Tipo de opção para mostrar no skew")
+                                 index=0, key="opcoes_skew_type")
     with col4:
         st.write("")  # Espaçamento
-        skew_calcular = st.button("🔄 Calcular", key="skew_calc_btn", type="primary")
+        calcular_btn = st.button("🔄 Calcular Ambos", key="opcoes_calc_btn", type="primary")
     
-    if skew_asset and skew_calcular:
-        # Inicialização de variáveis
+    if opcoes_asset and calcular_btn:
+        # Mapear tipo
+        type_map = {"Ambos": ['PUT', 'CALL'], "PUTs": ['PUT'], "CALLs": ['CALL']}
+        selected_types = type_map.get(skew_type, ['PUT', 'CALL'])
+        
+        df_term = pd.DataFrame()
         df_skew = pd.DataFrame()
         error_msg = None
-        trace_msg = None
-        warning_msg = None
-        skew_valid = False
-
-        # Mapear seleção para tipos
-        type_map = {
-            "Ambos": ['PUT', 'CALL'],
-            "PUTs": ['PUT'],
-            "CALLs": ['CALL']
-        }
-        selected_types = type_map.get(skew_type, ['PUT', 'CALL'])
-
-        with st.spinner(f"Buscando opções de {skew_asset} no opcoes.net.br..."):
+        
+        with st.spinner(f"Buscando opções de {opcoes_asset} no opcoes.net.br..."):
             try:
+                # Buscar Term Structure
+                df_term = get_term_structure_from_opcoes_net(opcoes_asset)
+                
+                # Buscar Skew (usa cache, então é instantâneo)
                 df_skew = get_volatility_skew_from_opcoes_net(
-                    skew_asset, 
+                    opcoes_asset, 
                     expiry_months=skew_months,
                     option_types=selected_types
                 )
-                
-                if not df_skew.empty and len(df_skew) >= 3:
-                    skew_valid = True
-                else:
-                    warning_msg = f"Poucos dados disponíveis para {skew_asset}."
-                    
             except Exception as e:
-                 error_msg = f"Erro ao calcular Volatility Skew: {e}"
-                 trace_msg = traceback.format_exc()
-        
-        # Renderização UI (FORA do spinner)
-        if error_msg:
-             with st.container():
+                error_msg = f"Erro: {e}"
+                import traceback
                 st.error(error_msg)
-                if trace_msg:
-                    st.code(trace_msg, language="python")
-        elif warning_msg:
-            st.warning(warning_msg)
-        elif skew_valid:
-            with st.container():
-                col_chart, col_info = st.columns([3, 1])
+                st.code(traceback.format_exc())
+        
+        if error_msg:
+            return
+            
+        # ========== TERM STRUCTURE ==========
+        st.markdown("### 📈 Estrutura a Termo da IV")
+        
+        if not df_term.empty:
+            col_chart, col_info = st.columns([3, 1])
+            
+            with col_chart:
+                st.plotly_chart(gerar_grafico_term_structure(df_term), use_container_width=True, key="term_chart")
+            
+            with col_info:
+                if 'strike_atm' in df_term.columns:
+                    st.metric("Strike ATM", f"R$ {df_term['strike_atm'].iloc[0]:.2f}")
+                st.metric("Vencimentos", f"{len(df_term)}")
                 
-                with col_chart:
-                    # Gerar gráfico com suporte a múltiplos tipos
-                    fig = gerar_grafico_skew_multi(df_skew, skew_asset)
-                    st.plotly_chart(fig, use_container_width=True, key="skew_chart")
-                
-                with col_info:
-                    if 'spot_price' in df_skew.columns:
-                        st.metric("Spot Price", f"R$ {df_skew['spot_price'].iloc[0]:.2f}")
-                    if 'expiry' in df_skew.columns:
-                        expiry = df_skew['expiry'].iloc[0]
-                        st.metric("Vencimento", expiry.strftime('%d/%m/%Y') if pd.notna(expiry) else '-')
-                    if 'days_to_exp' in df_skew.columns:
-                        st.metric("Dias até Venc.", f"{df_skew['days_to_exp'].iloc[0]} dias")
+                if len(df_term) >= 2:
+                    slope = (df_term['iv'].iloc[-1] - df_term['iv'].iloc[0]) / \
+                           (df_term['days_to_exp'].iloc[-1] - df_term['days_to_exp'].iloc[0])
+                    if slope > 0.01:
+                        st.success("📈 **CONTANGO**")
+                    elif slope < -0.01:
+                        st.error("📉 **BACKWARDATION**")
+                    else:
+                        st.info("➡️ **FLAT**")
                     
-                    # Skew Ratio (PUT OTM 5% / ATM)
-                    puts = df_skew[df_skew['type'] == 'PUT'] if 'type' in df_skew.columns else df_skew
-                    if not puts.empty:
-                        atm_iv = puts[puts['moneyness'].abs() < 3]['iv']
-                        otm_5_iv = puts[puts['moneyness'].between(-7, -3)]['iv']
-                        
-                        if len(atm_iv) > 0 and len(otm_5_iv) > 0:
-                            skew_ratio = otm_5_iv.mean() / atm_iv.mean()
-                            if skew_ratio >= 1.20:
-                                st.error(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                st.caption("⚠️ Proteção muito cara")
-                            elif skew_ratio >= 1.10:
-                                st.warning(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                st.caption("📊 Demanda moderada")
-                            elif skew_ratio >= 1.00:
-                                st.success(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                st.caption("✅ Skew normal")
-                            else:
-                                st.info(f"**Skew Ratio**: {skew_ratio:.2f}")
-                                st.caption("🔵 Proteção barata")
+                    st.metric("IV Curto", f"{df_term['iv'].iloc[0]:.1f}%")
+                    st.metric("IV Longo", f"{df_term['iv'].iloc[-1]:.1f}%")
+        else:
+            st.warning("Sem dados para Term Structure")
+        
+        st.markdown("---")
+        
+        # ========== VOLATILITY SKEW ==========
+        st.markdown("### 📐 Volatility Skew")
+        
+        if not df_skew.empty and len(df_skew) >= 3:
+            col_chart2, col_info2 = st.columns([3, 1])
+            
+            with col_chart2:
+                fig = gerar_grafico_skew_multi(df_skew, opcoes_asset)
+                st.plotly_chart(fig, use_container_width=True, key="skew_chart")
+            
+            with col_info2:
+                if 'spot_price' in df_skew.columns:
+                    st.metric("Spot Price", f"R$ {df_skew['spot_price'].iloc[0]:.2f}")
+                if 'expiry' in df_skew.columns:
+                    expiry = df_skew['expiry'].iloc[0]
+                    st.metric("Vencimento", expiry.strftime('%d/%m/%Y') if pd.notna(expiry) else '-')
+                if 'days_to_exp' in df_skew.columns:
+                    st.metric("Dias", f"{df_skew['days_to_exp'].iloc[0]}")
                 
-                with st.expander("📋 Detalhes por Strike"):
-                    cols_to_show = ['type', 'strike', 'moneyness', 'iv']
-                    cols_available = [c for c in cols_to_show if c in df_skew.columns]
-                    df_display = df_skew[cols_available].copy()
+                # Skew Ratio
+                puts = df_skew[df_skew['type'] == 'PUT'] if 'type' in df_skew.columns else df_skew
+                if not puts.empty:
+                    atm_iv = puts[puts['moneyness'].abs() < 3]['iv']
+                    otm_5_iv = puts[puts['moneyness'].between(-7, -3)]['iv']
                     
-                    col_names = {
-                        'type': 'Tipo',
-                        'strike': 'Strike',
-                        'moneyness': 'Moneyness (%)',
-                        'iv': 'IV (%)'
-                    }
-                    df_display = df_display.rename(columns=col_names)
-                    if 'Strike' in df_display.columns:
-                        df_display['Strike'] = df_display['Strike'].apply(lambda x: f"R$ {x:.2f}" if pd.notna(x) else '-')
-                    if 'Moneyness (%)' in df_display.columns:
-                        df_display['Moneyness (%)'] = df_display['Moneyness (%)'].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else '-')
-                    if 'IV (%)' in df_display.columns:
-                        df_display['IV (%)'] = df_display['IV (%)'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else '-')
-                    st.dataframe(df_display, hide_index=True, use_container_width=True, key="skew_df")
+                    if len(atm_iv) > 0 and len(otm_5_iv) > 0:
+                        skew_ratio = otm_5_iv.mean() / atm_iv.mean()
+                        if skew_ratio >= 1.20:
+                            st.error(f"Skew: {skew_ratio:.2f}")
+                        elif skew_ratio >= 1.10:
+                            st.warning(f"Skew: {skew_ratio:.2f}")
+                        else:
+                            st.success(f"Skew: {skew_ratio:.2f}")
+        else:
+            st.warning("Poucos dados para Skew")
     
     st.markdown("---")
 
@@ -1253,8 +1118,7 @@ def render():
         # Renderizar seções
         render_metricas_principais(valor_atual, media_hist, iv_rank_atual, percentil, z_score, mm21, vxewz_series)
         render_diagnostico(iv_rank_atual, mm21, mm63)
-        render_term_structure()
-        render_volatility_skew()
+        render_opcoes_net_analysis()  # Term Structure + Skew unificados
         render_iv_hv_spread(vxewz_series)  # IV/HV Spread - Volatility Risk Premium
         render_historico_vxewz(vxewz_series, valor_atual, media_hist, vxewz_recent)
         render_iv_rank_historico(iv_rank_series)
