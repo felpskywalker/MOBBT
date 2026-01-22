@@ -13,8 +13,15 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
+
+# Cache para dados do opcoes.net (evita abrir browser múltiplas vezes)
+_opcoes_cache = {
+    'data': {},      # ticker -> parsed DataFrame
+    'timestamp': {}  # ticker -> datetime
+}
+CACHE_EXPIRY_MINUTES = 5
 
 def get_chrome_driver() -> webdriver.Chrome:
     """Create and configure Chrome WebDriver.
@@ -308,6 +315,48 @@ def parse_opcoes_net_data(raw_data):
     return df
 
 
+def get_cached_options_data(ticker: str, force_refresh: bool = False) -> pd.DataFrame:
+    """
+    Retorna dados de opções do cache ou busca novos se expirado.
+    
+    Usa cache de 5 minutos para evitar múltiplas chamadas ao browser.
+    
+    Args:
+        ticker: Ticker do ativo (ex: BOVA11)
+        force_refresh: Se True, ignora cache e busca novos dados
+    
+    Returns:
+        DataFrame com opções parseadas
+    """
+    global _opcoes_cache
+    
+    ticker_upper = ticker.upper().replace('.SA', '')
+    now = datetime.now()
+    
+    # Verificar cache
+    if not force_refresh and ticker_upper in _opcoes_cache['data']:
+        cached_time = _opcoes_cache['timestamp'].get(ticker_upper)
+        if cached_time and (now - cached_time) < timedelta(minutes=CACHE_EXPIRY_MINUTES):
+            print(f"[CACHE] Using cached data for {ticker_upper} (age: {(now - cached_time).seconds}s)")
+            return _opcoes_cache['data'][ticker_upper]
+    
+    # Buscar novos dados
+    print(f"[CACHE] Fetching fresh data for {ticker_upper}...")
+    raw_data = fetch_opcoes_net_data(ticker_upper)
+    if not raw_data:
+        return pd.DataFrame()
+    
+    df = parse_opcoes_net_data(raw_data)
+    
+    # Salvar no cache
+    if not df.empty:
+        _opcoes_cache['data'][ticker_upper] = df
+        _opcoes_cache['timestamp'][ticker_upper] = now
+        print(f"[CACHE] Cached {len(df)} options for {ticker_upper}")
+    
+    return df
+
+
 # ============================================================
 # FUNÇÕES PARA TERM STRUCTURE E SKEW (VOLATILITY SURFACE)
 # ============================================================
@@ -324,14 +373,8 @@ def get_term_structure_from_opcoes_net(ticker: str, spot_price: float = None) ->
     Returns:
         DataFrame com columns: expiry, days_to_exp, iv_put, iv_call, iv_avg, strike_atm
     """
-    from datetime import datetime
-    
-    # Buscar dados brutos
-    raw_data = fetch_opcoes_net_data(ticker)
-    if not raw_data:
-        return pd.DataFrame()
-    
-    df = parse_opcoes_net_data(raw_data)
+    # Usar cache para evitar múltiplas chamadas
+    df = get_cached_options_data(ticker)
     if df.empty:
         return pd.DataFrame()
     
@@ -412,14 +455,8 @@ def get_volatility_skew_from_opcoes_net(
     Returns:
         DataFrame com columns: strike, moneyness, iv, type, ticker, expiry
     """
-    from datetime import datetime
-    
-    # Buscar dados brutos
-    raw_data = fetch_opcoes_net_data(ticker)
-    if not raw_data:
-        return pd.DataFrame()
-    
-    df = parse_opcoes_net_data(raw_data)
+    # Usar cache para evitar múltiplas chamadas
+    df = get_cached_options_data(ticker)
     if df.empty:
         return pd.DataFrame()
     
