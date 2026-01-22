@@ -118,12 +118,20 @@ def gerar_grafico_term_structure(df_term):
         marker=dict(size=10, color='#00E676')
     ))
     
+    # Identificar coluna de vencimento
+    col_venc = 'expiry_date' if 'expiry_date' in df_term.columns else 'expiry'
+
     # Anotações com vencimentos
     for _, row in df_term.iterrows():
+        try:
+            venc_txt = row[col_venc].strftime('%d/%m') if pd.notna(row[col_venc]) else ''
+        except:
+            venc_txt = ''
+            
         fig.add_annotation(
             x=row['days_to_exp'],
             y=row['iv'],
-            text=row['expiry_date'].strftime('%d/%m'),
+            text=venc_txt,
             showarrow=False,
             yshift=15,
             font=dict(size=10, color='gray')
