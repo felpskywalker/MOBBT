@@ -368,7 +368,7 @@ def get_term_structure_from_opcoes_net(ticker: str, spot_price: float = None) ->
     
     Args:
         ticker: Ticker do ativo (ex: BOVA11)
-        spot_price: Preço spot para determinar ATM (opcional, usa strike mais próximo)
+        spot_price: Preço spot para determinar ATM (opcional, busca via yfinance)
     
     Returns:
         DataFrame com columns: expiry, days_to_exp, iv_put, iv_call, iv_avg, strike_atm
@@ -380,7 +380,25 @@ def get_term_structure_from_opcoes_net(ticker: str, spot_price: float = None) ->
     
     # Determinar spot price se não fornecido
     if spot_price is None or spot_price <= 0:
-        # Usar strike médio como proxy
+        # Buscar preço real via yfinance
+        try:
+            import yfinance as yf
+            ticker_clean = ticker.upper().replace('.SA', '')
+            stock = yf.Ticker(f"{ticker_clean}.SA")
+            info = stock.info
+            if 'previousClose' in info and info['previousClose']:
+                spot_price = float(info['previousClose'])
+            else:
+                hist = stock.history(period='5d')
+                if not hist.empty:
+                    spot_price = float(hist['Close'].iloc[-1])
+            print(f"[TERM] Spot price for {ticker}: R$ {spot_price:.2f}")
+        except Exception as e:
+            print(f"[TERM] Error getting spot price: {e}")
+            # Fallback: usar strike mediano
+            spot_price = df['strike'].median()
+    
+    if spot_price is None or spot_price <= 0:
         spot_price = df['strike'].median()
     
     results = []
@@ -461,6 +479,24 @@ def get_volatility_skew_from_opcoes_net(
         return pd.DataFrame()
     
     # Determinar spot price se não fornecido
+    if spot_price is None or spot_price <= 0:
+        # Buscar preço real via yfinance
+        try:
+            import yfinance as yf
+            ticker_clean = ticker.upper().replace('.SA', '')
+            stock = yf.Ticker(f"{ticker_clean}.SA")
+            info = stock.info
+            if 'previousClose' in info and info['previousClose']:
+                spot_price = float(info['previousClose'])
+            else:
+                hist = stock.history(period='5d')
+                if not hist.empty:
+                    spot_price = float(hist['Close'].iloc[-1])
+            print(f"[SKEW] Spot price for {ticker}: R$ {spot_price:.2f}")
+        except Exception as e:
+            print(f"[SKEW] Error getting spot price: {e}")
+            spot_price = df['strike'].median()
+    
     if spot_price is None or spot_price <= 0:
         spot_price = df['strike'].median()
     
