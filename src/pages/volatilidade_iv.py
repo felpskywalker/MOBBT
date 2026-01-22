@@ -500,8 +500,11 @@ def render_term_structure():
     with col_term1:
         term_asset = st.text_input("Ativo para Term Structure", value="BOVA11", key="term_struct_asset_input",
                                    help="Digite o ticker do ativo (ex: VALE3, PETR4, BOVA11)")
+    with col_term2:
+        st.write("")  # Espaçamento
+        term_calcular = st.button("🔄 Calcular", key="term_calc_btn", type="primary")
     
-    if term_asset:
+    if term_asset and term_calcular:
         # Inicialização de variáveis de estado para renderização
         df_term = pd.DataFrame()
         error_msg = None
@@ -607,7 +610,7 @@ def render_volatility_skew():
         """)
     
     # Inputs
-    col1, col2, col3 = st.columns([1.2, 1, 1])
+    col1, col2, col3, col4 = st.columns([1.2, 1, 1, 0.8])
     with col1:
         skew_asset = st.text_input("Ativo para Skew Analysis", value="BOVA11", key="skew_asset",
                                    help="Digite o ticker do ativo")
@@ -620,8 +623,11 @@ def render_volatility_skew():
                                  options=["Ambos", "PUTs", "CALLs"], 
                                  index=0, key="skew_type_select",
                                  help="Tipo de opção para mostrar no skew")
+    with col4:
+        st.write("")  # Espaçamento
+        skew_calcular = st.button("🔄 Calcular", key="skew_calc_btn", type="primary")
     
-    if skew_asset:
+    if skew_asset and skew_calcular:
         # Inicialização de variáveis
         df_skew = pd.DataFrame()
         error_msg = None
