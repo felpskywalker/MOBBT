@@ -314,7 +314,7 @@ def calcular_hv_multiplos_periodos(series, periodos=[5, 10, 21, 63]):
     
     result = pd.DataFrame(index=series.index)
     for periodo in periodos:
-        hv = log_returns.rolling(window=periodo).std() * np.sqrt(252) * 100
+        hv = log_returns.ewm(span=periodo).std() * np.sqrt(252) * 100
         result[f'HV_{periodo}d'] = hv
     
     return result
