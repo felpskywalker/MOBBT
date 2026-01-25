@@ -369,8 +369,8 @@ def gerar_grafico_iv_bandas(series_iv, titulo="VXEWZ com Bandas de Bollinger", p
         return go.Figure().update_layout(title_text=titulo, template='brokeberg')
     
     # Calcular Bandas de Bollinger
-    df['MM'] = df['IV'].ewm(window=periodo_bb).mean()
-    df['STD'] = df['IV'].ewm(window=periodo_bb).std()
+    df['MM'] = df['IV'].rolling(window=periodo_bb).mean()
+    df['STD'] = df['IV'].rolling(window=periodo_bb).std()
     df['Upper'] = df['MM'] + (df['STD'] * desvios)
     df['Lower'] = df['MM'] - (df['STD'] * desvios)
     
@@ -435,8 +435,8 @@ def gerar_grafico_regime_volatilidade(series_iv, titulo="Regime de Volatilidade"
         return go.Figure().update_layout(title_text=titulo, template='brokeberg')
     
     # Calcular médias móveis
-    df['MM21'] = df['IV'].ewm(window=21).mean()
-    df['MM63'] = df['IV'].ewm(window=63).mean()
+    df['MM21'] = df['IV'].rolling(window=21).mean()
+    df['MM63'] = df['IV'].rolling(window=63).mean()
     df['Spread'] = df['MM21'] - df['MM63']
     
     fig = go.Figure()
