@@ -113,11 +113,11 @@ def smooth_curve(x: np.ndarray, y: np.ndarray, num_points: int = 300) -> Tuple[n
 def create_market_gamma_chart(
     gex_data: pd.DataFrame,
     spot_price: float,
-    title: str = "Market Gamma"
+    title: str = "Total GEX"
 ) -> go.Figure:
     """
-    Create Market Gamma style chart with smooth curves.
-    Similar to the reference image with CALL, PUT, and CALL+PUT lines.
+    Create Market Gamma style bar chart showing Net GEX.
+    Green bars for positive GEX, red bars for negative GEX.
     """
     if gex_data.empty:
         fig = go.Figure()
@@ -125,54 +125,35 @@ def create_market_gamma_chart(
         return fig
     
     df = gex_data.sort_values('strike').reset_index(drop=True)
-    strikes = df['strike'].values
     
-    # Prepare data for each curve
-    call_gex = df['call_gex'].values
-    put_gex = df['put_gex'].values
-    total_gex = df['total_gex'].values
-    
-    # Smooth the curves
-    strikes_smooth_call, call_smooth = smooth_curve(strikes, call_gex)
-    strikes_smooth_put, put_smooth = smooth_curve(strikes, put_gex)
-    strikes_smooth_total, total_smooth = smooth_curve(strikes, total_gex)
+    # Separate positive and negative GEX for coloring
+    positive_gex = df['total_gex'].apply(lambda x: x if x > 0 else 0)
+    negative_gex = df['total_gex'].apply(lambda x: x if x < 0 else 0)
     
     # Create figure
     fig = go.Figure()
     
-    # Add CALL line (Cyan - matches Brokeberg)
+    # Add positive GEX bars (green)
     fig.add_trace(
-        go.Scatter(
-            x=strikes_smooth_call,
-            y=call_smooth,
-            mode='lines',
-            name='CALL',
-            line=dict(color=COLORS['CIANO_NEON'], width=2.5),
-            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Call GEX:</b> %{y:,.0f}<extra></extra>'
+        go.Bar(
+            x=df['strike'],
+            y=positive_gex,
+            name='GEX Positivo',
+            marker_color=COLORS['VERDE_NEON'],
+            opacity=0.85,
+            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>GEX:</b> %{y:,.0f}<extra></extra>'
         )
     )
     
-    # Add PUT line (Red - matches Brokeberg)
+    # Add negative GEX bars (red)
     fig.add_trace(
-        go.Scatter(
-            x=strikes_smooth_put,
-            y=put_smooth,
-            mode='lines',
-            name='PUT',
-            line=dict(color=COLORS['VERMELHO_NEON'], width=2.5),
-            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Put GEX:</b> %{y:,.0f}<extra></extra>'
-        )
-    )
-    
-    # Add CALL+PUT line (Gold - matches Brokeberg)
-    fig.add_trace(
-        go.Scatter(
-            x=strikes_smooth_total,
-            y=total_smooth,
-            mode='lines',
-            name='CALL + PUT',
-            line=dict(color=COLORS['AMARELO_OURO'], width=3),
-            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>Total GEX:</b> %{y:,.0f}<extra></extra>'
+        go.Bar(
+            x=df['strike'],
+            y=negative_gex,
+            name='GEX Negativo',
+            marker_color=COLORS['VERMELHO_NEON'],
+            opacity=0.85,
+            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>GEX:</b> %{y:,.0f}<extra></extra>'
         )
     )
     
@@ -183,8 +164,8 @@ def create_market_gamma_chart(
     fig.add_vline(
         x=spot_price,
         line_width=2,
-        line_dash="solid",
-        line_color=COLORS['VERDE_NEON'],
+        line_dash="dash",
+        line_color=COLORS['AMARELO_OURO'],
     )
     
     # Add spot price annotation
@@ -212,16 +193,106 @@ def create_market_gamma_chart(
         template='brokeberg',
         paper_bgcolor=COLORS['FUNDO_ESCURO'],
         plot_bgcolor=COLORS['FUNDO_ESCURO'],
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5,
-            font=dict(size=12, color=COLORS['TEXTO_SECUNDARIO'])
+        barmode='relative',
+        showlegend=False,
+        height=450,
+        margin=dict(t=80, b=60, l=80, r=40),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor=COLORS['GRADE_SUTIL'],
+            tickformat=',.0f',
+            tickangle=45,
+            range=[spot_price - 50, spot_price + 50],
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
         ),
-        height=500,
-        margin=dict(t=100, b=60, l=80, r=40),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor=COLORS['GRADE_SUTIL'],
+            tickformat=',.0f',
+            zeroline=True,
+            zerolinecolor=COLORS['GRADE_SUTIL'],
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
+        )
+    )
+    
+    return fig
+
+
+def create_cumulative_gex_chart(
+    gex_data: pd.DataFrame,
+    spot_price: float,
+    title: str = "GEX Cumulativo"
+) -> go.Figure:
+    """
+    Create Cumulative GEX chart showing accumulated gamma exposure across strikes.
+    Line chart that sums the total GEX progressively.
+    """
+    if gex_data.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sem dados", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+    
+    df = gex_data.sort_values('strike').reset_index(drop=True)
+    
+    # Calculate cumulative sum
+    df['cumulative_gex'] = df['total_gex'].cumsum()
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add cumulative GEX line (cyan/teal color like reference)
+    fig.add_trace(
+        go.Scatter(
+            x=df['strike'],
+            y=df['cumulative_gex'],
+            mode='lines',
+            name='GEX Cumulativo',
+            line=dict(color=COLORS['CIANO_NEON'], width=2.5),
+            fill='tozeroy',
+            fillcolor='rgba(0, 212, 255, 0.2)',
+            hovertemplate='<b>Strike:</b> R$ %{x:.2f}<br><b>GEX Acumulado:</b> %{y:,.0f}<extra></extra>'
+        )
+    )
+    
+    # Add zero line
+    fig.add_hline(y=0, line_dash="solid", line_color=COLORS['GRADE_SUTIL'], line_width=1)
+    
+    # Add spot price vertical line
+    fig.add_vline(
+        x=spot_price,
+        line_width=2,
+        line_dash="dash",
+        line_color=COLORS['AMARELO_OURO'],
+    )
+    
+    # Add spot price annotation
+    fig.add_annotation(
+        x=spot_price,
+        y=1.05,
+        yref='paper',
+        text=f"Spot: R$ {spot_price:.2f}",
+        showarrow=False,
+        font=dict(color=COLORS['TEXTO_PRINCIPAL'], size=12),
+        bgcolor=COLORS['FUNDO_CARDS'],
+        borderpad=4
+    )
+    
+    # Update layout - Brokeberg theme
+    fig.update_layout(
+        title={
+            'text': title,
+            'x': 0,
+            'xanchor': 'left',
+            'font': {'size': 20, 'color': COLORS['TEXTO_PRINCIPAL'], 'family': 'Segoe UI, sans-serif'}
+        },
+        xaxis_title="Strike",
+        yaxis_title="GEX Acumulado",
+        template='brokeberg',
+        paper_bgcolor=COLORS['FUNDO_ESCURO'],
+        plot_bgcolor=COLORS['FUNDO_ESCURO'],
+        showlegend=False,
+        height=400,
+        margin=dict(t=80, b=60, l=80, r=40),
         xaxis=dict(
             showgrid=True,
             gridcolor=COLORS['GRADE_SUTIL'],
