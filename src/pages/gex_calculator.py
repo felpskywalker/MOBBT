@@ -112,7 +112,7 @@ def render():
     st.markdown("---")
     
     # Controles
-    col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1, 0.6, 0.6, 0.6, 1.2])
+    col1, col2, col3 = st.columns([1.5, 1, 1.5])
     
     with col1:
         ticker = st.text_input(
@@ -131,15 +131,6 @@ def render():
         )
     
     with col3:
-        show_gex = st.toggle("📊 GEX", value=True, help="Mostrar gráfico de Gamma Exposure")
-    
-    with col4:
-        show_cum_gex = st.toggle("📉 Acum.", value=True, help="Mostrar gráfico de GEX Cumulativo")
-    
-    with col5:
-        show_oi = st.toggle("📈 OI", value=False, help="Mostrar gráfico de Open Interest")
-    
-    with col6:
         st.write("")  # Espaçamento
         st.write("")
         calcular = st.button("🔄 Calcular", type="primary", use_container_width=True)
@@ -302,25 +293,22 @@ def render():
         else:
             st.warning("📉 **Regime Negativo**: Spot abaixo do Flip Point. Mercado tende a ser mais volátil.")
         
-        # Gráficos - baseado nos toggles
+        # Gráficos - todos os 3 gráficos são exibidos
         try:
-            if show_gex:
-                title = f"Total GEX - {ticker} ({reference_date})"
-                fig_gex = create_market_gamma_chart(gex_by_strike, spot_price, title)
-                st.plotly_chart(fig_gex, use_container_width=True, key="gex_main_chart")
+            # 1. Total GEX (barras)
+            title = f"Total GEX - {ticker} ({reference_date})"
+            fig_gex = create_market_gamma_chart(gex_by_strike, spot_price, title)
+            st.plotly_chart(fig_gex, use_container_width=True, key="gex_main_chart")
             
-            if show_cum_gex:
-                title = f"GEX Cumulativo - {ticker} ({reference_date})"
-                fig_cum_gex = create_cumulative_gex_chart(gex_by_strike, spot_price, title)
-                st.plotly_chart(fig_cum_gex, use_container_width=True, key="gex_cumulative_chart")
+            # 2. GEX Cumulativo (linha)
+            title = f"GEX Cumulativo - {ticker} ({reference_date})"
+            fig_cum_gex = create_cumulative_gex_chart(gex_by_strike, spot_price, title)
+            st.plotly_chart(fig_cum_gex, use_container_width=True, key="gex_cumulative_chart")
             
-            if show_oi:
-                title = f"Open Interest - {ticker} ({reference_date})"
-                fig_oi = create_open_interest_chart(options_df, spot_price, title, bucket_size)
-                st.plotly_chart(fig_oi, use_container_width=True, key="oi_main_chart")
-            
-            if not show_gex and not show_cum_gex and not show_oi:
-                st.info("👆 Ative pelo menos um gráfico nos toggles acima.")
+            # 3. Open Interest (barras)
+            title = f"Open Interest - {ticker} ({reference_date})"
+            fig_oi = create_open_interest_chart(options_df, spot_price, title, bucket_size)
+            st.plotly_chart(fig_oi, use_container_width=True, key="oi_main_chart")
         except Exception as e:
             st.error(f"❌ Erro ao gerar gráfico: {e}")
         
