@@ -539,6 +539,101 @@ def get_volatility_skew_from_opcoes_net(
     return result
 
 
+def get_put_options_for_screener(
+    ticker: str,
+    spot_price: float,
+    expiry_date=None,
+    strike_range_pct: float = 5.0
+) -> pd.DataFrame:
+    """
+    Busca opções PUT de um ativo para o Screener com range de strikes.
+    
+    Args:
+        ticker: Ticker do ativo (ex: VALE3)
+        spot_price: Preço spot do ativo
+        expiry_date: Data de vencimento específica (opcional, usa próximo se None)
+        strike_range_pct: Range de strikes em % do spot (ex: 5.0 = 5% ITM/OTM)
+    
+    Returns:
+        DataFrame com opções PUT dentro do range especificado, incluindo gregas
+    """
+    # Usar cache para evitar múltiplas chamadas ao browser
+    df = get_cached_options_data(ticker)
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Filtrar apenas PUT
+    df_puts = df[df['type'] == 'PUT'].copy()
+    if df_puts.empty:
+        return pd.DataFrame()
+    
+    # Se expiry_date fornecido, filtrar por esse vencimento
+    if expiry_date is not None:
+        # Converter para datetime se for date
+        if hasattr(expiry_date, 'date'):
+            expiry_dt = expiry_date
+        else:
+            expiry_dt = pd.Timestamp(expiry_date)
+        
+        df_puts = df_puts[df_puts['expiry'].dt.date == expiry_dt.date() if hasattr(expiry_dt, 'date') else df_puts['expiry'] == expiry_dt]
+        
+        if df_puts.empty:
+            # Se não encontrou o vencimento exato, pegar o mais próximo
+            available_expiries = sorted(df[df['type'] == 'PUT']['expiry'].dropna().unique())
+            if available_expiries:
+                # Encontrar o vencimento mais próximo
+                target = pd.Timestamp(expiry_date)
+                closest = min(available_expiries, key=lambda x: abs(x - target))
+                df_puts = df[df['type'] == 'PUT'].copy()
+                df_puts = df_puts[df_puts['expiry'] == closest]
+    else:
+        # Usar próximo vencimento disponível
+        available_expiries = sorted(df_puts['expiry'].dropna().unique())
+        if available_expiries:
+            df_puts = df_puts[df_puts['expiry'] == available_expiries[0]]
+    
+    if df_puts.empty:
+        return pd.DataFrame()
+    
+    # Calcular range de strikes baseado no spot
+    min_strike = spot_price * (1 - strike_range_pct / 100)
+    max_strike = spot_price * (1 + strike_range_pct / 100)
+    
+    # Filtrar por range de strikes
+    df_filtered = df_puts[
+        (df_puts['strike'] >= min_strike) & 
+        (df_puts['strike'] <= max_strike)
+    ].copy()
+    
+    if df_filtered.empty:
+        return pd.DataFrame()
+    
+    # Calcular moneyness
+    df_filtered['moneyness'] = ((df_filtered['strike'] - spot_price) / spot_price) * 100
+    
+    # Renomear colunas para consistência com o screener
+    df_filtered = df_filtered.rename(columns={
+        'ticker': 'option_ticker',
+        'market_price': 'premium',
+        'delta_site': 'delta',
+        'gamma_site': 'gamma'
+    })
+    
+    # Selecionar colunas relevantes
+    cols = ['option_ticker', 'strike', 'premium', 'expiry', 'iv', 'moneyness', 
+            'open_interest', 'delta', 'gamma']
+    available_cols = [c for c in cols if c in df_filtered.columns]
+    
+    result = df_filtered[available_cols].copy()
+    result['underlying'] = ticker
+    result['spot_price'] = spot_price
+    
+    # Ordenar por strike
+    result = result.sort_values('strike').reset_index(drop=True)
+    
+    return result
+
+
 if __name__ == "__main__":
     print("Testing Opcoes.net.br Scraper...")
     raw = fetch_opcoes_net_data()
@@ -547,3 +642,4 @@ if __name__ == "__main__":
     print(df.head())
     print("\nSample with positive OI:")
     print(df[df['open_interest'] > 0].head())
+

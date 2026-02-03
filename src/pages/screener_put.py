@@ -1,7 +1,8 @@
 """
-Screener de PUT - Ações Líquidas
-================================
-Monitora opções PUT das ações mais líquidas com yields e indicadores fractais.
+Screener de PUT - Ações Líquidas (opcoes.net)
+=============================================
+Monitora opções PUT das ações mais líquidas com yields, gregas e indicadores fractais.
+Fonte de dados: opcoes.net.br
 """
 
 import streamlit as st
@@ -13,11 +14,10 @@ from dateutil.relativedelta import relativedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.models.put_utils import (
-    get_selic_annual, get_third_friday, generate_put_ticker,
+    get_selic_annual, get_third_friday,
     get_asset_price_yesterday
 )
-from src.data_loaders.b3_api import fetch_option_price_b3
-from src.data_loaders.proventos import buscar_proventos_detalhados, calcular_soma_proventos
+from src.data_loaders.opcoes_net import get_put_options_for_screener
 from src.models.black_scholes import implied_volatility, calculate_greeks
 from src.models.fractal_analytics import (
     calculate_hurst_exponent, get_hurst_interpretation,
@@ -34,95 +34,42 @@ LIQUID_TICKERS = [
     "GGBR4", "RENT3", "RAIL3", "BEEF3"
 ]
 
-
-def get_atm_strike(spot_price: float) -> float:
-    """Retorna strike ATM arredondado."""
-    if spot_price < 20:
-        return round(spot_price * 2) / 2  # Arredonda para 0.50
-    elif spot_price < 50:
-        return round(spot_price)  # Arredonda para 1.00
-    else:
-        return round(spot_price / 2) * 2  # Arredonda para 2.00
+# Range de strikes em % do spot (ITM/OTM)
+STRIKE_RANGE_PCT = 5.0
 
 
-def buscar_opcao_com_fallback(ticker: str, asset_code: str, expiry: date, strike: float) -> tuple:
+def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> list:
     """
-    Busca opção com fallback de dividendos e busca por strikes próximos.
+    Escaneia um ticker individual e retorna lista de opções PUT com métricas.
     
     Returns:
-        tuple: (b3_data, option_ticker, foi_fallback)
-    """
-    # Tenta ticker original
-    option_ticker = generate_put_ticker(asset_code, expiry, strike)
-    b3_data = fetch_option_price_b3(option_ticker)
-    
-    if b3_data and b3_data.get('last_price', 0) > 0:
-        return b3_data, option_ticker, False
-    
-    # Fallback: buscar proventos e ajustar código
-    df_prov = buscar_proventos_detalhados(ticker)
-    ajuste_dividendos = calcular_soma_proventos(df_prov) if not df_prov.empty else 0.0
-    
-    if ajuste_dividendos > 0:
-        strike_ajustado_base = strike + ajuste_dividendos
-        
-        # Busca por proximidade: ±0.5 ao redor do calculado
-        offsets = [0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4, 0.5, -0.5]
-        
-        for offset in offsets:
-            strike_tentativa = strike_ajustado_base + offset
-            ticker_tentativa = generate_put_ticker(asset_code, expiry, strike_tentativa)
-            b3_data_tent = fetch_option_price_b3(ticker_tentativa)
-            
-            if b3_data_tent and b3_data_tent.get('last_price', 0) > 0:
-                return b3_data_tent, ticker_tentativa, True
-    
-    return None, option_ticker, False
-
-
-def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> dict:
-    """
-    Escaneia um ticker individual e retorna métricas.
-    
-    Returns:
-        dict com todas as métricas ou None se erro
+        list de dicts com métricas de cada opção, ou lista vazia se erro
     """
     try:
         # 1. Busca preço do ativo
         spot = get_asset_price_yesterday(ticker)
         if spot <= 0:
-            return None
+            return []
         
-        # 2. Determina strike ATM
-        strike = get_atm_strike(spot)
+        # 2. Busca opções PUT do opcoes.net com range de 5% ITM/OTM
+        options_df = get_put_options_for_screener(
+            ticker=ticker,
+            spot_price=spot,
+            expiry_date=expiry,
+            strike_range_pct=STRIKE_RANGE_PCT
+        )
         
-        # 3. Busca opção com fallback
-        asset_code = ticker[:4]
-        b3_data, option_ticker, foi_fallback = buscar_opcao_com_fallback(ticker, asset_code, expiry, strike)
+        if options_df.empty:
+            return []
         
-        if not b3_data or b3_data['last_price'] <= 0:
-            return None
-        
-        premium = b3_data['last_price']
-        
-        # 5. Calcula yields
-        days_to_exp = (expiry - date.today()).days
-        yield_period = (premium / spot) * 100
-        yield_annual = ((1 + yield_period/100) ** (365/max(days_to_exp, 1)) - 1) * 100
-        selic_period = ((1 + selic_annual/100) ** (days_to_exp/365) - 1) * 100
-        pct_cdi = (yield_period / selic_period * 100) if selic_period > 0 else 0
-        
-        # 6. Moneyness
-        moneyness = ((strike - spot) / spot) * 100
-        
-        # 7. Busca histórico para análise fractal
+        # 3. Busca histórico para análise fractal (apenas uma vez por ticker)
         full_ticker = f"{ticker}.SA"
         start_date = date.today() - timedelta(days=int(252 * 1.5))
         hist = yf.download(full_ticker, start=start_date.strftime('%Y-%m-%d'), 
                           end=date.today().strftime('%Y-%m-%d'), progress=False)
         
         if hist.empty or len(hist) < 50:
-            return None
+            return []
         
         # Extrai série de preços
         if 'Adj Close' in hist.columns:
@@ -135,68 +82,98 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> dict:
         if isinstance(close_prices, pd.DataFrame):
             close_prices = close_prices.squeeze()
         
-        # 8. Calcula Hurst e volatilidade
+        # 4. Calcula métricas fractais (uma vez por ticker)
         hurst = calculate_hurst_exponent(close_prices)
         hist_vol = calculate_historical_volatility(close_prices)
-        
-        # 9. Calcula probabilidades
-        T = max(days_to_exp / 365.0, 0.001)
-        r = selic_annual / 100
-        
-        # Tenta calcular IV, usa volatilidade histórica como fallback
-        try:
-            iv = implied_volatility(premium, spot, strike, T, r)
-            if iv <= 0:
-                iv = hist_vol
-        except:
-            iv = hist_vol
-        
-        prob_bs = prob_exercise_bs(spot, strike, T, r, iv)
-        prob_frac = prob_exercise_fractal(spot, strike, T, r, iv, hurst)
-        
-        # 10. Filtros de tendência
         filters = check_trend_filters(close_prices)
         
-        # 11. Interpretação Hurst
+        # Interpretação Hurst
         recent_return = (close_prices.iloc[-1] / close_prices.iloc[-20] - 1) * 100 if len(close_prices) >= 20 else 0
         interpretation, trend_dir, _ = get_hurst_interpretation(hurst, recent_return)
         
-        # 12. Recomendação
+        # Recomendação
         classification, rec_text, risk_level, rec_color = get_recommendation(hurst, filters, spot)
         
-        # 13. IV Rank
-        iv_rank_data = calculate_iv_rank(iv, close_prices)
-        iv_rank = iv_rank_data['iv_rank']
-        iv_signal = iv_rank_data['sell_signal']
+        # 5. Processa cada opção PUT encontrada
+        results = []
+        days_to_exp = (expiry - date.today()).days
+        T = max(days_to_exp / 365.0, 0.001)
+        r = selic_annual / 100
+        selic_period = ((1 + selic_annual/100) ** (days_to_exp/365) - 1) * 100
         
-        return {
-            'Ticker': ticker,
-            'Opção': option_ticker,
-            'Spot': round(spot, 2),
-            'Strike': round(strike, 2),
-            'Prêmio': round(premium, 2),
-            'Moneyness': round(moneyness, 1),
-            'Yield %': round(yield_period, 2),
-            'Yield A.': round(yield_annual, 1),
-            '% CDI': round(pct_cdi, 0),
-            'Hurst': round(hurst, 3),
-            'Tipo': interpretation,
-            'Direção': trend_dir,
-            'SMA21': '✅' if filters['filter_a'] else '❌',
-            'Mom 30d': '✅' if filters['filter_b'] else '❌',
-            'Slope': '✅' if filters['filter_c'] else '❌',
-            'Prob BS': round(prob_bs * 100, 1),
-            'Prob Frac': round(prob_frac * 100, 1),
-            'Recomendação': classification,
-            'Risco': risk_level,
-            '_rec_color': rec_color,
-            'Vol': round(b3_data.get('volume', 0), 0),
-            'IV Rank': round(iv_rank, 0),
-            'IV Sinal': iv_signal,
-        }
+        for _, opt in options_df.iterrows():
+            premium = opt.get('premium', 0)
+            strike = opt.get('strike', 0)
+            option_ticker = opt.get('option_ticker', '')
+            
+            if premium is None or premium <= 0 or strike <= 0:
+                continue
+            
+            # Yields
+            yield_period = (premium / spot) * 100
+            yield_annual = ((1 + yield_period/100) ** (365/max(days_to_exp, 1)) - 1) * 100
+            pct_cdi = (yield_period / selic_period * 100) if selic_period > 0 else 0
+            
+            # Moneyness
+            moneyness = ((strike - spot) / spot) * 100
+            
+            # IV - usar do site ou calcular
+            iv = opt.get('iv', None)
+            if iv is None or iv <= 0:
+                try:
+                    iv = implied_volatility(premium, spot, strike, T, r)
+                    if iv <= 0:
+                        iv = hist_vol
+                except:
+                    iv = hist_vol
+            
+            # Probabilidades
+            prob_bs = prob_exercise_bs(spot, strike, T, r, iv if iv else hist_vol)
+            prob_frac = prob_exercise_fractal(spot, strike, T, r, iv if iv else hist_vol, hurst)
+            
+            # IV Rank
+            iv_rank_data = calculate_iv_rank(iv if iv else hist_vol, close_prices)
+            iv_rank = iv_rank_data['iv_rank']
+            iv_signal = iv_rank_data['sell_signal']
+            
+            # Gregas do site
+            delta = opt.get('delta', None)
+            gamma = opt.get('gamma', None)
+            
+            results.append({
+                'Ticker': ticker,
+                'Opção': option_ticker,
+                'Spot': round(spot, 2),
+                'Strike': round(strike, 2),
+                'Prêmio': round(premium, 2),
+                'Moneyness': round(moneyness, 1),
+                'Delta': round(delta, 4) if delta and not pd.isna(delta) else None,
+                'Gamma': round(gamma, 4) if gamma and not pd.isna(gamma) else None,
+                'IV': round(iv * 100, 1) if iv and iv > 0 else None,
+                'Yield %': round(yield_period, 2),
+                'Yield A.': round(yield_annual, 1),
+                '% CDI': round(pct_cdi, 0),
+                'Hurst': round(hurst, 3),
+                'Tipo': interpretation,
+                'Direção': trend_dir,
+                'SMA21': '✅' if filters['filter_a'] else '❌',
+                'Mom 30d': '✅' if filters['filter_b'] else '❌',
+                'Slope': '✅' if filters['filter_c'] else '❌',
+                'Prob BS': round(prob_bs * 100, 1),
+                'Prob Frac': round(prob_frac * 100, 1),
+                'Recomendação': classification,
+                'Risco': risk_level,
+                '_rec_color': rec_color,
+                'OI': int(opt.get('open_interest', 0)),
+                'IV Rank': round(iv_rank, 0),
+                'IV Sinal': iv_signal,
+            })
+        
+        return results
         
     except Exception as e:
-        return None
+        print(f"[SCREENER] Error scanning {ticker}: {e}")
+        return []
 
 
 def run_full_scan(tickers: list, expiry: date, progress_callback=None) -> pd.DataFrame:
@@ -207,9 +184,9 @@ def run_full_scan(tickers: list, expiry: date, progress_callback=None) -> pd.Dat
         DataFrame com resultados
     """
     selic_annual = get_selic_annual()
-    results = []
+    all_results = []
     
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:  # Reduzido para evitar rate limit
         futures = {
             executor.submit(scan_single_ticker, ticker, expiry, selic_annual): ticker 
             for ticker in tickers
@@ -221,14 +198,14 @@ def run_full_scan(tickers: list, expiry: date, progress_callback=None) -> pd.Dat
             if progress_callback:
                 progress_callback(completed / len(tickers))
             
-            result = future.result()
-            if result:
-                results.append(result)
+            results = future.result()
+            if results:
+                all_results.extend(results)
     
-    if not results:
+    if not all_results:
         return pd.DataFrame()
     
-    df = pd.DataFrame(results)
+    df = pd.DataFrame(all_results)
     
     # Ordena por Yield decrescente
     df = df.sort_values('Yield %', ascending=False)
@@ -266,7 +243,8 @@ def render():
     st.header("📊 Screener de PUT - Ações Líquidas")
     st.info(
         "Monitora opções PUT das ações mais líquidas da B3 com análise de yields, "
-        "indicadores fractais e recomendações de venda."
+        "gregas, indicadores fractais e recomendações de venda. "
+        "**Fonte: opcoes.net.br** | Range: ±5% ITM/OTM"
     )
     
     # Controles
@@ -319,6 +297,7 @@ def render():
     # Execução do scan
     if scan_button or 'screener_df' in st.session_state:
         if scan_button:
+            st.warning("⏳ Buscando dados do opcoes.net.br... Isso pode levar alguns minutos na primeira execução.")
             progress_bar = st.progress(0, text="Escaneando ativos...")
             
             def update_progress(pct):
@@ -364,13 +343,16 @@ def render():
         # Tabela principal
         st.markdown("### 📋 Resultados do Screener")
         
-        # Colunas para exibição
+        # Colunas para exibição (com novas colunas de Gregas)
         display_cols = [
             'Ticker', 'Opção', 'Spot', 'Strike', 'Prêmio', 'Moneyness',
+            'Delta', 'Gamma', 'IV',
             'Yield %', '% CDI', 'IV Rank', 'IV Sinal', 'Hurst', 'Tipo', 'Direção',
             'SMA21', 'Mom 30d', 'Slope', 'Prob BS', 'Prob Frac', 'Recomendação'
         ]
         
+        # Filtrar apenas colunas que existem
+        display_cols = [c for c in display_cols if c in df_filtered.columns]
         df_display = df_filtered[display_cols].copy()
         
         # Estilização
@@ -383,13 +365,16 @@ def render():
             'Strike': 'R$ {:.2f}',
             'Prêmio': 'R$ {:.2f}',
             'Moneyness': '{:.1f}%',
+            'Delta': '{:.4f}',
+            'Gamma': '{:.4f}',
+            'IV': '{:.1f}%',
             'Yield %': '{:.2f}%',
             '% CDI': '{:.0f}%',
             'IV Rank': '{:.0f}%',
             'Hurst': '{:.3f}',
             'Prob BS': '{:.1f}%',
             'Prob Frac': '{:.1f}%',
-        })
+        }, na_rep='-')
         
         st.dataframe(styled_df, use_container_width=True, height=600)
         
@@ -399,6 +384,11 @@ def render():
             
             with leg1:
                 st.markdown("""
+                **Gregas (do opcoes.net):**
+                - **Delta**: Sensibilidade ao preço do ativo
+                - **Gamma**: Taxa de variação do Delta
+                - **IV**: Volatilidade Implícita (%)
+                
                 **Indicadores de Direção:**
                 - **SMA21**: ✅ se Preço > SMA 21 dias
                 - **Mom 30d**: ✅ se Momentum 30 dias > 0
@@ -418,6 +408,11 @@ def render():
                 - 🟣 **NEUTRO**: Siga as probabilidades Black-Scholes
                 - 🟡 **CAUTELA**: Exaustão de topo
                 - 🔴 **RISCO ALTO**: Queda persistente sem suporte
+                
+                **Range de Strikes:**
+                - Opções com strikes entre -5% e +5% do spot
+                - Moneyness negativo = ITM (In The Money)
+                - Moneyness positivo = OTM (Out of The Money)
                 """)
         
         # Download CSV
