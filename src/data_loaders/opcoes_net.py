@@ -342,19 +342,28 @@ def get_cached_options_data(ticker: str, force_refresh: bool = False) -> pd.Data
     
     # Buscar novos dados
     print(f"[CACHE] Fetching fresh data for {ticker_upper}...")
-    raw_data = fetch_opcoes_net_data(ticker_upper)
-    if not raw_data:
+    try:
+        raw_data = fetch_opcoes_net_data(ticker_upper)
+        if not raw_data:
+            print(f"[CACHE] No raw data returned for {ticker_upper}")
+            return pd.DataFrame()
+        
+        df = parse_opcoes_net_data(raw_data)
+        
+        # Salvar no cache
+        if not df.empty:
+            _opcoes_cache['data'][ticker_upper] = df
+            _opcoes_cache['timestamp'][ticker_upper] = now
+            print(f"[CACHE] Cached {len(df)} options for {ticker_upper}")
+        else:
+            print(f"[CACHE] Parsed data is empty for {ticker_upper}")
+        
+        return df
+    except Exception as e:
+        print(f"[CACHE] Error fetching data for {ticker_upper}: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
-    
-    df = parse_opcoes_net_data(raw_data)
-    
-    # Salvar no cache
-    if not df.empty:
-        _opcoes_cache['data'][ticker_upper] = df
-        _opcoes_cache['timestamp'][ticker_upper] = now
-        print(f"[CACHE] Cached {len(df)} options for {ticker_upper}")
-    
-    return df
 
 
 # ============================================================

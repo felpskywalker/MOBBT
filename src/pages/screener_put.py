@@ -12,6 +12,7 @@ import yfinance as yf
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import traceback
 
 from src.models.put_utils import (
     get_selic_annual, get_third_friday,
@@ -46,21 +47,31 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> list:
         list de dicts com métricas de cada opção, ou lista vazia se erro
     """
     try:
+        print(f"[SCREENER] Scanning {ticker}...")
+        
         # 1. Busca preço do ativo
         spot = get_asset_price_yesterday(ticker)
         if spot <= 0:
+            print(f"[SCREENER] {ticker}: No spot price found")
             return []
+        print(f"[SCREENER] {ticker}: Spot = R$ {spot:.2f}")
         
         # 2. Busca opções PUT do opcoes.net com range de 5% ITM/OTM
-        options_df = get_put_options_for_screener(
-            ticker=ticker,
-            spot_price=spot,
-            expiry_date=expiry,
-            strike_range_pct=STRIKE_RANGE_PCT
-        )
+        try:
+            options_df = get_put_options_for_screener(
+                ticker=ticker,
+                spot_price=spot,
+                expiry_date=expiry,
+                strike_range_pct=STRIKE_RANGE_PCT
+            )
+        except Exception as e:
+            print(f"[SCREENER] {ticker}: Error fetching options: {e}")
+            return []
         
         if options_df.empty:
+            print(f"[SCREENER] {ticker}: No PUT options found")
             return []
+        print(f"[SCREENER] {ticker}: Found {len(options_df)} PUT options")
         
         # 3. Busca histórico para análise fractal (apenas uma vez por ticker)
         full_ticker = f"{ticker}.SA"
@@ -69,6 +80,7 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> list:
                           end=date.today().strftime('%Y-%m-%d'), progress=False)
         
         if hist.empty or len(hist) < 50:
+            print(f"[SCREENER] {ticker}: Insufficient historical data")
             return []
         
         # Extrai série de preços
@@ -173,6 +185,7 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> list:
         
     except Exception as e:
         print(f"[SCREENER] Error scanning {ticker}: {e}")
+        traceback.print_exc()
         return []
 
 
