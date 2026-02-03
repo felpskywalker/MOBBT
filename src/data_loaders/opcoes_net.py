@@ -268,9 +268,13 @@ def parse_opcoes_net_data(raw_data):
         # Mark invalid gamma (0 means no data)
         df['gamma_site'] = df['gamma_site'].apply(lambda x: x if x > 0 else None)
         print(f"[DEBUG] Gamma from site - valid: {df['gamma_site'].notna().sum()}/{len(df)}")
+        # Drop original string column to avoid conflicts
+        df = df.drop(columns=['gamma'])
     
     if 'delta' in df.columns:
         df['delta_site'] = df['delta'].apply(clean_number)
+        # Drop original string column to avoid conflicts
+        df = df.drop(columns=['delta'])
     
     # Mark invalid market prices (0 or negative are invalid for option prices)
     df['market_price'] = df['market_price'].apply(lambda x: x if x > 0 else None)
