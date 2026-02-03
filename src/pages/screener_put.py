@@ -146,11 +146,17 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> list:
             # IV Rank
             iv_rank_data = calculate_iv_rank(iv if iv else hist_vol, close_prices)
             iv_rank = iv_rank_data['iv_rank']
-            iv_signal = iv_rank_data['sell_signal']
+            iv_signal = iv_rank_data.get('sell_signal', 'Neutro')  # Fallback se não tiver
             
-            # Gregas do site
+            # Gregas do site - converter para scalar se for Series
             delta = opt.get('delta', None)
             gamma = opt.get('gamma', None)
+            
+            # Converter Series para scalar
+            if isinstance(delta, pd.Series):
+                delta = delta.iloc[0] if len(delta) > 0 else None
+            if isinstance(gamma, pd.Series):
+                gamma = gamma.iloc[0] if len(gamma) > 0 else None
             
             results.append({
                 'Ticker': ticker,
@@ -159,9 +165,9 @@ def scan_single_ticker(ticker: str, expiry: date, selic_annual: float) -> list:
                 'Strike': round(strike, 2),
                 'Prêmio': round(premium, 2),
                 'Moneyness': round(moneyness, 1),
-                'Delta': round(delta, 4) if delta and not pd.isna(delta) else None,
-                'Gamma': round(gamma, 4) if gamma and not pd.isna(gamma) else None,
-                'IV': round(iv * 100, 1) if iv and iv > 0 else None,
+                'Delta': round(float(delta), 4) if delta is not None and not pd.isna(delta) else None,
+                'Gamma': round(float(gamma), 4) if gamma is not None and not pd.isna(gamma) else None,
+                'IV': round(float(iv) * 100, 1) if iv and iv > 0 else None,
                 'Yield %': round(yield_period, 2),
                 'Yield A.': round(yield_annual, 1),
                 '% CDI': round(pct_cdi, 0),

@@ -578,28 +578,43 @@ def get_put_options_for_screener(
     
     # Se expiry_date fornecido, filtrar por esse vencimento
     if expiry_date is not None:
-        # Converter para datetime se for date
-        if hasattr(expiry_date, 'date'):
-            expiry_dt = expiry_date
+        # Converter para date puro para comparação
+        from datetime import date as date_type
+        if hasattr(expiry_date, 'date') and callable(expiry_date.date):
+            target_date = expiry_date.date()
+        elif isinstance(expiry_date, date_type):
+            target_date = expiry_date
         else:
-            expiry_dt = pd.Timestamp(expiry_date)
+            target_date = pd.Timestamp(expiry_date).date()
         
-        df_puts = df_puts[df_puts['expiry'].dt.date == expiry_dt.date() if hasattr(expiry_dt, 'date') else df_puts['expiry'] == expiry_dt]
+        print(f"[PUT_SCREENER] Target expiry: {target_date}")
+        print(f"[PUT_SCREENER] Available expiries: {sorted(df_puts['expiry'].dropna().unique())}")
         
-        if df_puts.empty:
+        # Filtrar pelo vencimento exato
+        df_puts_filtered = df_puts[df_puts['expiry'].dt.date == target_date]
+        
+        if df_puts_filtered.empty:
             # Se não encontrou o vencimento exato, pegar o mais próximo
+            print(f"[PUT_SCREENER] Exact expiry not found, finding closest...")
             available_expiries = sorted(df[df['type'] == 'PUT']['expiry'].dropna().unique())
             if available_expiries:
                 # Encontrar o vencimento mais próximo
-                target = pd.Timestamp(expiry_date)
-                closest = min(available_expiries, key=lambda x: abs(x - target))
+                target_ts = pd.Timestamp(target_date)
+                closest = min(available_expiries, key=lambda x: abs(x - target_ts))
+                print(f"[PUT_SCREENER] Using closest expiry: {closest}")
                 df_puts = df[df['type'] == 'PUT'].copy()
                 df_puts = df_puts[df_puts['expiry'] == closest]
+            else:
+                df_puts = pd.DataFrame()
+        else:
+            df_puts = df_puts_filtered
     else:
         # Usar próximo vencimento disponível
         available_expiries = sorted(df_puts['expiry'].dropna().unique())
         if available_expiries:
             df_puts = df_puts[df_puts['expiry'] == available_expiries[0]]
+    
+    print(f"[PUT_SCREENER] After expiry filter: {len(df_puts)} options")
     
     if df_puts.empty:
         return pd.DataFrame()
