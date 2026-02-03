@@ -11,60 +11,18 @@ import pandas as pd
 from src.data_loaders.opcoes_net import fetch_opcoes_net_data, parse_opcoes_net_data
 from src.models.gex_calculator import calculate_gex_dataframe, aggregate_gex_by_strike, get_selic_rate
 from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics, create_open_interest_chart, create_cumulative_gex_chart
+from src.models.put_utils import get_asset_price_yesterday
 
-# Cache for spot prices
-_spot_cache = {}
 
 def get_spot_price(ticker: str, use_cache: bool = True) -> float:
-    """Obtém o preço de fechamento do último pregão (D-1) do ativo via yfinance.
+    """Obtém o preço de fechamento do último pregão (D-1) do ativo.
     
-    Usa previousClose para garantir que é o fechamento do dia anterior,
-    e não dados intraday com delay de 15 minutos.
+    Usa get_asset_price_yesterday que é mais confiável e tem cache do Streamlit,
+    evitando problemas de rate limit do yfinance.
     """
-    import time as time_module
-    
-    cache_key = ticker.upper().replace('.SA', '')
-    
-    # Check cache first (valid for 1 hour since using previous close)
-    if use_cache and cache_key in _spot_cache:
-        cached_price, cached_time = _spot_cache[cache_key]
-        if (datetime.now() - cached_time).seconds < 3600:
-            return cached_price
-    
-    yahoo_ticker = f"{cache_key}.SA"
-    
-    # Try up to 3 times with exponential backoff
-    for attempt in range(3):
-        try:
-            stock = yf.Ticker(yahoo_ticker)
-            
-            # Use previousClose - this is ALWAYS the prior day's closing price
-            # Not affected by intraday 15-min delay
-            info = stock.info
-            if 'previousClose' in info and info['previousClose']:
-                price = float(info['previousClose'])
-                _spot_cache[cache_key] = (price, datetime.now())
-                return price
-            
-            # Fallback to history if info fails
-            hist = stock.history(period="5d")
-            if not hist.empty and len(hist) >= 2:
-                # Use second-to-last to ensure it's previous close, not today's intraday
-                price = float(hist['Close'].iloc[-2])
-                _spot_cache[cache_key] = (price, datetime.now())
-                return price
-                
-        except Exception as e:
-            error_msg = str(e).lower()
-            if 'rate' in error_msg or 'limit' in error_msg or 'too many' in error_msg:
-                wait_time = 2 ** attempt
-                st.warning(f"Rate limit detectado, aguardando {wait_time}s... (tentativa {attempt+1}/3)")
-                time_module.sleep(wait_time)
-            else:
-                st.warning(f"Erro ao buscar preço: {e}")
-                break
-    
-    return 0.0
+    # Usa a função centralizada que tem cache do Streamlit (ttl=600)
+    # e usa yf.download que é mais robusto contra rate limit
+    return get_asset_price_yesterday(ticker)
 
 
 def get_last_trading_date() -> str:
