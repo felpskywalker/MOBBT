@@ -10,7 +10,7 @@ import pandas as pd
 
 from src.data_loaders.opcoes_net import fetch_opcoes_net_data, parse_opcoes_net_data
 from src.models.gex_calculator import calculate_gex_dataframe, aggregate_gex_by_strike, get_selic_rate
-from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics, create_open_interest_chart, create_cumulative_gex_chart
+from src.components.charts_gex import create_market_gamma_chart, create_metrics_panel, calculate_metrics, create_open_interest_chart, create_cumulative_gex_chart, create_oi_by_expiry_chart
 from src.models.put_utils import get_asset_price_yesterday
 
 
@@ -355,6 +355,19 @@ def render():
         expiries = sorted(options_df['expiry'].dropna().unique())
         
         if len(expiries) > 0:
+            st.markdown("---")
+            
+            # Gráfico de OI por Vencimento (sempre mostra todos os vencimentos)
+            st.subheader("📊 Open Interest por Vencimento")
+            try:
+                fig_oi_expiry = create_oi_by_expiry_chart(
+                    options_df, 
+                    title=f"Open Interest por Vencimento - {stored_ticker}"
+                )
+                st.plotly_chart(fig_oi_expiry, use_container_width=True, key="oi_by_expiry_chart")
+            except Exception as e:
+                st.error(f"❌ Erro ao gerar gráfico de OI por vencimento: {e}")
+            
             st.markdown("---")
             
             # Criar opções para o dropdown

@@ -579,6 +579,114 @@ def create_open_interest_chart(
     return fig
 
 
+def create_oi_by_expiry_chart(
+    options_df: pd.DataFrame,
+    title: str = "Open Interest por Vencimento"
+) -> go.Figure:
+    """
+    Create Open Interest chart by expiry date, showing CALL and PUT bars grouped.
+    
+    Args:
+        options_df: DataFrame with columns 'expiry', 'type', 'open_interest'
+        title: Chart title
+    """
+    if options_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sem dados", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+    
+    df = options_df.copy()
+    
+    # Filter valid expiries
+    df = df[df['expiry'].notna()]
+    
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Sem dados de vencimento", xref="paper", yref="paper", x=0.5, y=0.5)
+        return fig
+    
+    # Aggregate by expiry and type
+    call_oi = df[df['type'] == 'CALL'].groupby('expiry')['open_interest'].sum().reset_index()
+    call_oi.columns = ['expiry', 'call_oi']
+    
+    put_oi = df[df['type'] == 'PUT'].groupby('expiry')['open_interest'].sum().reset_index()
+    put_oi.columns = ['expiry', 'put_oi']
+    
+    # Merge
+    oi_data = pd.merge(call_oi, put_oi, on='expiry', how='outer').fillna(0)
+    oi_data = oi_data.sort_values('expiry').reset_index(drop=True)
+    
+    # Format expiry dates for display
+    oi_data['expiry_str'] = oi_data['expiry'].apply(lambda x: x.strftime('%d/%m/%Y'))
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add CALL bars (cyan)
+    fig.add_trace(
+        go.Bar(
+            x=oi_data['expiry_str'],
+            y=oi_data['call_oi'],
+            name='CALL',
+            marker_color=COLORS['CIANO_NEON'],
+            opacity=0.85,
+            hovertemplate='<b>Vencimento:</b> %{x}<br><b>Call OI:</b> %{y:,.0f}<extra></extra>'
+        )
+    )
+    
+    # Add PUT bars (red)
+    fig.add_trace(
+        go.Bar(
+            x=oi_data['expiry_str'],
+            y=oi_data['put_oi'],
+            name='PUT',
+            marker_color=COLORS['VERMELHO_NEON'],
+            opacity=0.85,
+            hovertemplate='<b>Vencimento:</b> %{x}<br><b>Put OI:</b> %{y:,.0f}<extra></extra>'
+        )
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title={
+            'text': title,
+            'x': 0,
+            'xanchor': 'left',
+            'font': {'size': 20, 'color': COLORS['TEXTO_PRINCIPAL'], 'family': 'Segoe UI, sans-serif'}
+        },
+        xaxis_title="Vencimento",
+        yaxis_title="Open Interest",
+        template='brokeberg',
+        paper_bgcolor=COLORS['FUNDO_ESCURO'],
+        plot_bgcolor=COLORS['FUNDO_ESCURO'],
+        barmode='group',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12, color=COLORS['TEXTO_SECUNDARIO'])
+        ),
+        height=400,
+        margin=dict(t=100, b=80, l=80, r=40),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor=COLORS['GRADE_SUTIL'],
+            tickangle=45,
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor=COLORS['GRADE_SUTIL'],
+            tickformat=',.0f',
+            tickfont=dict(color=COLORS['TEXTO_SECUNDARIO'])
+        )
+    )
+    
+    return fig
+
+
 # Keep old functions for backward compatibility
 def create_gex_chart(gex_data: pd.DataFrame, spot_price: float, title: str = "") -> go.Figure:
     """Backward compatible function - now uses new style."""
