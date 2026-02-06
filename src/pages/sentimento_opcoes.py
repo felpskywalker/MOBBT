@@ -125,24 +125,20 @@ def gerar_grafico_pcr_historico(df_historico: pd.DataFrame):
 
 
 def gerar_grafico_oi_agregado(options_df: pd.DataFrame, spot_price: float = None):
-    """Gera gráfico de barras do Open Interest agregado por tipo."""
+    """Gera gráfico de barras do Open Interest agregado por tipo e bins de strike."""
     if options_df.empty:
         return go.Figure().update_layout(title="Sem dados")
     
-    # Agregar por strike e tipo
-    df_agg = options_df.groupby(['strike', 'type'])['open_interest'].sum().reset_index()
+    # Criar cópia e agregar strikes em bins de R$5
+    df = options_df.copy()
+    bin_size = 5
+    df['strike_bin'] = (df['strike'] // bin_size) * bin_size
     
-    # Filtrar strikes próximos ao spot (±15%)
-    if spot_price:
-        min_strike = spot_price * 0.85
-        max_strike = spot_price * 1.15
-        df_agg = df_agg[(df_agg['strike'] >= min_strike) & (df_agg['strike'] <= max_strike)]
-    
-    if df_agg.empty:
-        return go.Figure().update_layout(title="Sem dados no range de strikes")
+    # Agregar por bin e tipo
+    df_agg = df.groupby(['strike_bin', 'type'])['open_interest'].sum().reset_index()
     
     # Pivotar para ter colunas separadas
-    df_pivot = df_agg.pivot(index='strike', columns='type', values='open_interest').fillna(0)
+    df_pivot = df_agg.pivot(index='strike_bin', columns='type', values='open_interest').fillna(0)
     
     fig = go.Figure()
     
@@ -152,7 +148,8 @@ def gerar_grafico_oi_agregado(options_df: pd.DataFrame, spot_price: float = None
             y=df_pivot['CALL'],
             name='CALL OI',
             marker_color='#00CC96',
-            hovertemplate='Strike: R$ %{x:.2f}<br>CALL OI: %{y:,.0f}<extra></extra>'
+            hovertemplate='Strike: R$ %{x:.0f}-%{customdata:.0f}<br>CALL OI: %{y:,.0f}<extra></extra>',
+            customdata=[x + bin_size for x in df_pivot.index]
         ))
     
     if 'PUT' in df_pivot.columns:
@@ -161,7 +158,8 @@ def gerar_grafico_oi_agregado(options_df: pd.DataFrame, spot_price: float = None
             y=df_pivot['PUT'],
             name='PUT OI',
             marker_color='#EF553B',
-            hovertemplate='Strike: R$ %{x:.2f}<br>PUT OI: %{y:,.0f}<extra></extra>'
+            hovertemplate='Strike: R$ %{x:.0f}-%{customdata:.0f}<br>PUT OI: %{y:,.0f}<extra></extra>',
+            customdata=[x + bin_size for x in df_pivot.index]
         ))
     
     # Adicionar linha do spot price
@@ -176,11 +174,11 @@ def gerar_grafico_oi_agregado(options_df: pd.DataFrame, spot_price: float = None
         )
     
     fig.update_layout(
-        title='Open Interest por Strike',
+        title='Open Interest por Strike (Agregado em bins de R$5)',
         xaxis_title='Strike (R$)',
         yaxis_title='Open Interest',
         template='brokeberg',
-        barmode='group',  # Barras lado a lado
+        barmode='group',
         height=400,
         legend=dict(orientation='h', yanchor='bottom', y=1.02)
     )
@@ -317,17 +315,10 @@ def render():
         with col4:
             st.metric("Total CALL OI", f"{pcr_data.get('total_call_oi', 0):,}")
         
-        # Tabs para gráficos
-        tab1, tab2 = st.tabs(["📊 Open Interest", "📈 Histórico PCR"])
+        # Tabs para gráficos - Histórico primeiro
+        tab1, tab2 = st.tabs(["📈 Histórico PCR", "📊 Open Interest"])
         
         with tab1:
-            st.plotly_chart(
-                gerar_grafico_oi_agregado(options_df, spot_price),
-                use_container_width=True,
-                key="chart_oi_agregado"
-            )
-        
-        with tab2:
             st.caption("O histórico é construído automaticamente via coleta diária.")
             
             df_historico = carregar_pcr_historico(ticker)
@@ -344,6 +335,13 @@ def render():
                 )
             else:
                 st.warning("📭 Ainda não há histórico de PCR. Será construído automaticamente.")
+        
+        with tab2:
+            st.plotly_chart(
+                gerar_grafico_oi_agregado(options_df, spot_price),
+                use_container_width=True,
+                key="chart_oi_agregado"
+            )
     else:
         st.caption("👆 Clique em 'Calcular PCR' para ver a análise.")
     
