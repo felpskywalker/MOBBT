@@ -124,13 +124,22 @@ def gerar_grafico_pcr_historico(df_historico: pd.DataFrame):
     return fig
 
 
-def gerar_grafico_oi_agregado(options_df: pd.DataFrame):
+def gerar_grafico_oi_agregado(options_df: pd.DataFrame, spot_price: float = None):
     """Gera gráfico de barras do Open Interest agregado por tipo."""
     if options_df.empty:
         return go.Figure().update_layout(title="Sem dados")
     
     # Agregar por strike e tipo
     df_agg = options_df.groupby(['strike', 'type'])['open_interest'].sum().reset_index()
+    
+    # Filtrar strikes próximos ao spot (±15%)
+    if spot_price:
+        min_strike = spot_price * 0.85
+        max_strike = spot_price * 1.15
+        df_agg = df_agg[(df_agg['strike'] >= min_strike) & (df_agg['strike'] <= max_strike)]
+    
+    if df_agg.empty:
+        return go.Figure().update_layout(title="Sem dados no range de strikes")
     
     # Pivotar para ter colunas separadas
     df_pivot = df_agg.pivot(index='strike', columns='type', values='open_interest').fillna(0)
@@ -143,25 +152,36 @@ def gerar_grafico_oi_agregado(options_df: pd.DataFrame):
             y=df_pivot['CALL'],
             name='CALL OI',
             marker_color='#00CC96',
-            opacity=0.7
+            hovertemplate='Strike: R$ %{x:.2f}<br>CALL OI: %{y:,.0f}<extra></extra>'
         ))
     
     if 'PUT' in df_pivot.columns:
         fig.add_trace(go.Bar(
             x=df_pivot.index,
-            y=-df_pivot['PUT'],  # Negativo para ficar embaixo
+            y=df_pivot['PUT'],
             name='PUT OI',
             marker_color='#EF553B',
-            opacity=0.7
+            hovertemplate='Strike: R$ %{x:.2f}<br>PUT OI: %{y:,.0f}<extra></extra>'
         ))
+    
+    # Adicionar linha do spot price
+    if spot_price:
+        fig.add_vline(
+            x=spot_price,
+            line_dash="dash",
+            line_color="white",
+            line_width=2,
+            annotation_text=f"Spot: R$ {spot_price:.2f}",
+            annotation_position="top"
+        )
     
     fig.update_layout(
         title='Open Interest por Strike',
         xaxis_title='Strike (R$)',
         yaxis_title='Open Interest',
         template='brokeberg',
-        barmode='overlay',
-        height=350,
+        barmode='group',  # Barras lado a lado
+        height=400,
         legend=dict(orientation='h', yanchor='bottom', y=1.02)
     )
     
@@ -273,6 +293,11 @@ def render():
     if 'options_pcr' in st.session_state and st.session_state.get('ticker_pcr') == ticker:
         options_df = st.session_state['options_pcr']
         
+        # Obter spot price
+        spot_price = get_asset_price_yesterday(f"{ticker}.SA")
+        if spot_price is None:
+            spot_price = options_df['strike'].median()
+        
         # Calcular PCR
         pcr_data = calcular_pcr(options_df)
         
@@ -297,7 +322,7 @@ def render():
         
         with tab1:
             st.plotly_chart(
-                gerar_grafico_oi_agregado(options_df),
+                gerar_grafico_oi_agregado(options_df, spot_price),
                 use_container_width=True,
                 key="chart_oi_agregado"
             )
