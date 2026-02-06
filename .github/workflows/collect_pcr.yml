@@ -1,0 +1,45 @@
+name: Collect Daily PCR Data
+
+on:
+  schedule:
+    # Roda às 05:00 UTC (02:00 BRT) de terça a sábado
+    # Isso coleta dados de segunda a sexta após o fechamento
+    - cron: '0 5 * * 2-6'
+  
+  # Permite execução manual
+  workflow_dispatch:
+
+jobs:
+  collect-pcr:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pandas requests selenium webdriver-manager supabase yfinance
+      
+      - name: Run PCR collection
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/collect_pcr.py
+      
+      - name: Report status
+        if: always()
+        run: |
+          echo "PCR collection completed at $(date)"

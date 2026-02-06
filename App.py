@@ -102,6 +102,7 @@ with st.sidebar:
             "Amplitude",
             "Volatilidade IV",
             "GEX Gamma",
+            "Sentimento Opções",
             "Calendário",
             "Econômicos BR",
             "Commodities",
@@ -121,6 +122,7 @@ with st.sidebar:
             "water",
             "activity",
             "lightning",
+            "emoji-sunglasses",
             "calendar-event",
             "bar-chart-line-fill",
             "box-seam",
@@ -183,6 +185,10 @@ elif pagina_selecionada == "Volatilidade IV":
 elif pagina_selecionada == "GEX Gamma":
     from src.pages import gex_calculator
     gex_calculator.render()
+
+elif pagina_selecionada == "Sentimento Opções":
+    from src.pages import sentimento_opcoes
+    sentimento_opcoes.render()
 
 elif pagina_selecionada == "Calendário":
     from src.pages import event_calendar
