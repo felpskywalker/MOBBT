@@ -9,6 +9,7 @@ python-bcb
 fredapi
 textblob
 openpyxl
+xlrd
 streamlit-option-menu
 bcrypt
 pandas_ta
