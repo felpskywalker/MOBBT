@@ -188,172 +188,139 @@ def render():
         key="ticker_sentimento"
     )
     
-    # Botão para carregar dados
-    if st.button("🔄 Carregar/Atualizar Dados", key="btn_carregar_sentimento"):
-        with st.spinner(f"Buscando dados de opções de {ticker}..."):
-            # Buscar dados de opções
+    # Dois botões separados
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        btn_max_pain = st.button("🎯 Calcular Max Pain", key="btn_max_pain", use_container_width=True)
+    
+    with col_btn2:
+        btn_pcr = st.button("📊 Calcular PCR", key="btn_pcr", use_container_width=True)
+    
+    # Carregar dados para Max Pain
+    if btn_max_pain:
+        with st.spinner(f"Buscando dados de opções de {ticker} para Max Pain..."):
             options_df = get_cached_options_data(ticker, force_refresh=True)
             
             if not options_df.empty:
-                st.session_state['options_sentimento'] = options_df
-                st.session_state['ticker_sentimento_atual'] = ticker
-                st.success(f"✅ {len(options_df)} opções carregadas!")
+                st.session_state['options_max_pain'] = options_df
+                st.session_state['ticker_max_pain'] = ticker
+                st.success(f"✅ {len(options_df)} opções carregadas para Max Pain!")
             else:
                 st.error("❌ Não foi possível carregar dados de opções.")
     
-    # Exibir análise se tiver dados
-    if 'options_sentimento' in st.session_state and st.session_state.get('ticker_sentimento_atual') == ticker:
-        options_df = st.session_state['options_sentimento']
+    # Carregar dados para PCR
+    if btn_pcr:
+        with st.spinner(f"Buscando dados de opções de {ticker} para PCR..."):
+            options_df = get_cached_options_data(ticker, force_refresh=True)
+            
+            if not options_df.empty:
+                st.session_state['options_pcr'] = options_df
+                st.session_state['ticker_pcr'] = ticker
+                st.success(f"✅ {len(options_df)} opções carregadas para PCR!")
+            else:
+                st.error("❌ Não foi possível carregar dados de opções.")
+    
+    st.markdown("---")
+    
+    # ================== SEÇÃO MAX PAIN ==================
+    st.markdown("### 🎯 Max Pain")
+    
+    if 'options_max_pain' in st.session_state and st.session_state.get('ticker_max_pain') == ticker:
+        options_df = st.session_state['options_max_pain']
         
         # Obter preço spot
         spot_price = get_asset_price_yesterday(f"{ticker}.SA")
-        
         if spot_price is None:
-            st.warning("Não foi possível obter preço spot. Usando estimativa.")
             spot_price = options_df['strike'].median()
-        
-        # Calcular PCR
-        pcr_data = calcular_pcr(options_df)
         
         # Calcular Max Pain
         max_pain_strike, pain_por_strike = calcular_max_pain(options_df, spot_price)
         
-        st.markdown("---")
+        if max_pain_strike and pain_por_strike:
+            # Métricas
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Max Pain Strike", f"R$ {max_pain_strike:.2f}")
+            with col2:
+                st.metric("Spot Price", f"R$ {spot_price:.2f}")
+            with col3:
+                dist_pct = ((max_pain_strike - spot_price) / spot_price) * 100
+                st.metric("Distância", f"{dist_pct:+.1f}%")
+            
+            # Gráfico
+            st.plotly_chart(
+                gerar_grafico_max_pain(pain_por_strike, max_pain_strike, spot_price),
+                use_container_width=True,
+                key="chart_max_pain"
+            )
+            
+            # Resumo
+            if max_pain_strike > spot_price:
+                st.success(f"📈 Max Pain está **acima** do spot → Pressão de alta esperada")
+            else:
+                st.warning(f"📉 Max Pain está **abaixo** do spot → Pressão de baixa esperada")
+        else:
+            st.warning("Não foi possível calcular o Max Pain.")
+    else:
+        st.caption("👆 Clique em 'Calcular Max Pain' para ver a análise.")
+    
+    st.markdown("---")
+    
+    # ================== SEÇÃO PCR ==================
+    st.markdown("### 📊 Put-Call Ratio")
+    
+    if 'options_pcr' in st.session_state and st.session_state.get('ticker_pcr') == ticker:
+        options_df = st.session_state['options_pcr']
         
-        # ================== MÉTRICAS PRINCIPAIS ==================
-        st.markdown("### 📈 Indicadores Atuais")
+        # Calcular PCR
+        pcr_data = calcular_pcr(options_df)
         
+        # Métricas principais
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             pcr_oi = pcr_data.get('pcr_oi')
-            st.metric(
-                "Put-Call Ratio (OI)",
-                f"{pcr_oi:.3f}" if pcr_oi else "N/D",
-                help="Relação entre Open Interest de PUTs e CALLs. >1 = mais PUTs (medo), <1 = mais CALLs (otimismo)"
-            )
+            st.metric("PCR (OI)", f"{pcr_oi:.3f}" if pcr_oi else "N/D")
         
         with col2:
-            st.metric(
-                "Sentimento",
-                pcr_data.get('interpretacao', 'N/D'),
-                help="Interpretação do PCR atual"
-            )
+            st.metric("Sentimento", pcr_data.get('interpretacao', 'N/D'))
         
         with col3:
-            st.metric(
-                "Max Pain",
-                f"R$ {max_pain_strike:.2f}" if max_pain_strike else "N/D",
-                help="Strike onde vendedores de opções perdem menos dinheiro"
-            )
-        
-        with col4:
-            if max_pain_strike and spot_price:
-                dist_pct = ((max_pain_strike - spot_price) / spot_price) * 100
-                st.metric(
-                    "Distância ao Max Pain",
-                    f"{dist_pct:+.1f}%",
-                    help="Distância percentual do spot ao Max Pain"
-                )
-            else:
-                st.metric("Distância ao Max Pain", "N/D")
-        
-        # Segunda linha de métricas
-        col5, col6, col7, col8 = st.columns(4)
-        
-        with col5:
             st.metric("Total PUT OI", f"{pcr_data.get('total_put_oi', 0):,}")
         
-        with col6:
+        with col4:
             st.metric("Total CALL OI", f"{pcr_data.get('total_call_oi', 0):,}")
         
-        with col7:
-            st.metric("Spot Price", f"R$ {spot_price:.2f}" if spot_price else "N/D")
-        
-        with col8:
-            total_oi = pcr_data.get('total_put_oi', 0) + pcr_data.get('total_call_oi', 0)
-            st.metric("Total OI", f"{total_oi:,}")
-        
-        st.markdown("---")
-        
-        # ================== GRÁFICOS ==================
-        tab1, tab2, tab3 = st.tabs(["🎯 Max Pain", "📊 Open Interest", "📈 Histórico PCR"])
+        # Tabs para gráficos
+        tab1, tab2 = st.tabs(["📊 Open Interest", "📈 Histórico PCR"])
         
         with tab1:
-            st.markdown("#### Max Pain Analysis")
-            st.caption(
-                "O **Max Pain** é o strike onde o valor total de opções ITM é minimizado. "
-                "Teoria: o preço tende a convergir para o Max Pain próximo ao vencimento."
-            )
-            
-            if max_pain_strike and pain_por_strike:
-                st.plotly_chart(
-                    gerar_grafico_max_pain(pain_por_strike, max_pain_strike, spot_price),
-                    use_container_width=True,
-                    key="chart_max_pain"
-                )
-                
-                # Resumo
-                col_resumo1, col_resumo2 = st.columns(2)
-                with col_resumo1:
-                    if max_pain_strike > spot_price:
-                        st.success(f"📈 Max Pain ({max_pain_strike:.2f}) está **acima** do spot ({spot_price:.2f})")
-                    else:
-                        st.warning(f"📉 Max Pain ({max_pain_strike:.2f}) está **abaixo** do spot ({spot_price:.2f})")
-                
-                with col_resumo2:
-                    menor_dor = pain_por_strike.get(max_pain_strike, 0) / 1_000_000
-                    st.info(f"💰 Menor exposição no Max Pain: **R$ {menor_dor:.1f}M**")
-            else:
-                st.warning("Não foi possível calcular o Max Pain.")
-        
-        with tab2:
-            st.markdown("#### Distribuição de Open Interest")
             st.plotly_chart(
                 gerar_grafico_oi_agregado(options_df),
                 use_container_width=True,
                 key="chart_oi_agregado"
             )
         
-        with tab3:
-            st.markdown("#### Histórico do Put-Call Ratio")
-            st.caption("O histórico é construído automaticamente ao longo do tempo via coleta diária.")
+        with tab2:
+            st.caption("O histórico é construído automaticamente via coleta diária.")
             
-            # Carregar histórico do Supabase
             df_historico = carregar_pcr_historico(ticker)
             
             if not df_historico.empty:
-                # Calcular percentil
                 percentil = calcular_pcr_percentil(pcr_data.get('pcr_oi'), df_historico)
-                
                 if percentil is not None:
-                    st.metric("PCR Percentil (Histórico)", f"{percentil:.0f}%",
-                             help="Posição do PCR atual em relação ao histórico. >80% = medo extremo, <20% = euforia")
+                    st.metric("PCR Percentil", f"{percentil:.0f}%")
                 
                 st.plotly_chart(
                     gerar_grafico_pcr_historico(df_historico),
                     use_container_width=True,
                     key="chart_pcr_historico"
                 )
-                
-                # Estatísticas
-                with st.expander("📊 Estatísticas do Histórico"):
-                    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                    with col_stat1:
-                        st.metric("Média", f"{df_historico['pcr_oi'].mean():.3f}")
-                    with col_stat2:
-                        st.metric("Mínimo", f"{df_historico['pcr_oi'].min():.3f}")
-                    with col_stat3:
-                        st.metric("Máximo", f"{df_historico['pcr_oi'].max():.3f}")
-                    with col_stat4:
-                        st.metric("Dias de Dados", len(df_historico))
             else:
-                st.warning(
-                    "📭 Ainda não há histórico de PCR para este ativo. "
-                    "O histórico será construído automaticamente pela coleta diária."
-                )
+                st.warning("📭 Ainda não há histórico de PCR. Será construído automaticamente.")
     else:
-        st.caption("👆 Clique em 'Carregar/Atualizar Dados' para começar a análise.")
+        st.caption("👆 Clique em 'Calcular PCR' para ver a análise.")
     
     st.markdown("---")
     
