@@ -47,8 +47,8 @@ def main():
         print("❌ ERRO: SUPABASE_URL e SUPABASE_KEY devem estar definidos!")
         sys.exit(1)
     
-    # Ativos para coletar
-    tickers = ['BOVA11', 'PETR4', 'VALE3']
+    # Ativos para coletar (apenas BOVA11 para economizar espaço)
+    tickers = ['BOVA11']
     
     # Data de referência (dia anterior se for de madrugada)
     data_ref = date.today()
