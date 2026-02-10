@@ -20,7 +20,7 @@ import pandas as pd
 
 # Imports do projeto
 from src.data_loaders.opcoes_net import fetch_opcoes_net_data, parse_opcoes_net_data
-from src.data_loaders.pcr import calcular_pcr, calcular_max_pain, salvar_pcr_supabase
+from src.data_loaders.pcr import calcular_pcr, salvar_pcr_supabase
 
 
 def get_spot_price_yfinance(ticker: str) -> float:
@@ -86,11 +86,6 @@ def main():
             total_oi = options_df['open_interest'].sum()
             oi_positivo = (options_df['open_interest'] > 0).sum()
             print(f"  [DEBUG] Total OI: {total_oi:,} | Linhas com OI > 0: {oi_positivo}/{len(options_df)}")
-            print(f"  [DEBUG] Colunas: {options_df.columns.tolist()}")
-            print(f"  [DEBUG] Sample OI values: {options_df['open_interest'].head(10).tolist()}")
-            print(f"  [DEBUG] Sample cob values: {options_df['cob'].head(10).tolist()}")
-            print(f"  [DEBUG] Sample trav values: {options_df['trav'].head(10).tolist()}")
-            print(f"  [DEBUG] Sample descob values: {options_df['descob'].head(10).tolist()}")
             
             # Calcular PCR
             pcr_data = calcular_pcr(options_df)
@@ -101,50 +96,20 @@ def main():
             spot_price = get_spot_price_yfinance(ticker)
             print(f"  ✓ Spot: R$ {spot_price:.2f}" if spot_price else "  ⚠️ Spot não disponível")
             
-            # Calcular Max Pain (filtrar strikes próximos ao spot para resultado correto)
-            if spot_price:
-                # Filtrar opções com OI > 0 e strikes razoáveis (±30% do spot)
-                mask = (
-                    (options_df['open_interest'] > 0) &
-                    (options_df['strike'] >= spot_price * 0.7) &
-                    (options_df['strike'] <= spot_price * 1.3)
-                )
-                options_filtered = options_df[mask]
-                print(f"  [DEBUG] Opções com OI>0 perto do spot: {len(options_filtered)}")
-            else:
-                options_filtered = options_df[options_df['open_interest'] > 0]
-            
-            if len(options_filtered) > 0:
-                max_pain_strike, _ = calcular_max_pain(options_filtered, spot_price)
-            else:
-                max_pain_strike = None
-            print(f"  ✓ Max Pain: R$ {max_pain_strike:.2f}" if max_pain_strike else "  ⚠️ Max Pain não calculado")
-            
-            # Validação: não salvar dados claramente incorretos
+            # Validação: não salvar dados sem PCR
             pcr_oi = pcr_data.get('pcr_oi')
-            dados_validos = True
             
-            if pcr_oi is None:
-                print(f"  ⚠️ PCR é None - verificar se OI está sendo extraído corretamente")
-                dados_validos = False
-            
-            if max_pain_strike and spot_price:
-                dist = abs(max_pain_strike - spot_price) / spot_price
-                if dist > 0.5:  # Max Pain mais de 50% longe do spot = erro
-                    print(f"  ⚠️ Max Pain ({max_pain_strike:.2f}) muito longe do Spot ({spot_price:.2f}) - provavelmente erro")
-                    max_pain_strike = None
-            
-            if not dados_validos and total_oi == 0:
-                print(f"  ❌ SKIP: OI total é 0 - dados não disponíveis no horário")
+            if pcr_oi is None or total_oi == 0:
+                print(f"  ❌ SKIP: PCR inválido (OI total: {total_oi}) - dados não disponíveis")
                 resultados.append({'ticker': ticker, 'status': 'SKIP', 'pcr': None})
                 continue
             
-            # Salvar no Supabase
+            # Salvar no Supabase (apenas PCR, sem Max Pain)
             sucesso = salvar_pcr_supabase(
                 data=data_ref,
                 ticker=ticker,
                 pcr_data=pcr_data,
-                max_pain_strike=max_pain_strike,
+                max_pain_strike=None,
                 spot_price=spot_price
             )
             
