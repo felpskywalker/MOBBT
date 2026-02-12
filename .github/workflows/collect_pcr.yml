@@ -2,9 +2,9 @@ name: Collect Daily PCR Data
 
 on:
   schedule:
-    # Roda às 01:00 UTC (22:00 BRT) de segunda a sexta
-    # Coleta dados do próprio dia após o fechamento do mercado
-    - cron: '0 1 * * 1-5'
+    # Roda às 10:00 UTC (07:00 BRT) de terça a sábado
+    # Coleta dados do dia anterior (após o mercado ter fechado)
+    - cron: '0 10 * * 2-6'
   
   # Permite execução manual
   workflow_dispatch:
