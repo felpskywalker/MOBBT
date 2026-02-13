@@ -232,6 +232,42 @@ def fetch_opcoes_net_data(ticker="BOVA11"):
         
         raw_data = driver.execute_script(extraction_script)
         print(f"Extracted {len(raw_data)} rows.")
+        
+        # DEBUG: Dump raw cell info for first 3 rows to diagnose OI column issues
+        debug_script = """
+        return (() => {
+            const rows = document.querySelectorAll('.dt-scroll-body tbody tr');
+            const debug = [];
+            let count = 0;
+            rows.forEach(row => {
+                if (count >= 3) return;
+                const cells = row.querySelectorAll('td');
+                const cellTexts = [];
+                for (let i = 0; i < cells.length; i++) {
+                    cellTexts.push(i + ':' + cells[i].innerText.trim());
+                }
+                debug.push({
+                    cellCount: cells.length,
+                    allCells: cellTexts.join(' | ')
+                });
+                count++;
+            });
+            return debug;
+        })();
+        """
+        try:
+            debug_info = driver.execute_script(debug_script)
+            for i, d in enumerate(debug_info):
+                print(f"[DEBUG RAW ROW {i}] cells={d['cellCount']}: {d['allCells']}")
+        except Exception as e:
+            print(f"[DEBUG] Error getting raw cells: {e}")
+        
+        # DEBUG: Also check first few raw_data OI values
+        if raw_data and len(raw_data) > 0:
+            for i in range(min(3, len(raw_data))):
+                r = raw_data[i]
+                print(f"[DEBUG SCRAPED {i}] ticker={r.get('ticker')} strike={r.get('strike')} cob='{r.get('cob')}' trav='{r.get('trav')}' descob='{r.get('descob')}'")
+        
         return raw_data
         
     except Exception as e:
