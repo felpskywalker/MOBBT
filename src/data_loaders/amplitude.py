@@ -2,44 +2,32 @@
 import streamlit as st
 import pandas as pd
 import requests
-import io
-import zipfile
 import yfinance as yf
 from datetime import datetime, timedelta
 
 @st.cache_data(ttl=3600*8) # Cache de 8 horas
-def obter_tickers_cvm_amplitude():
-    """Esta função busca a lista de tickers da CVM."""
-    st.info("Buscando lista de tickers da CVM... (Cache de 8h)")
-    ano = datetime.now().year
-    
-    def tentar_baixar(ano_target):
-        url = f'https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{ano_target}.zip'
-        try:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                with z.open(f'fca_cia_aberta_valor_mobiliario_{ano_target}.csv') as f:
-                    return pd.read_csv(f, sep=';', encoding='ISO-8859-1', dtype={'Valor_Mobiliario': 'category', 'Mercado': 'category'})
-        except Exception:
-            return None
+def obter_tickers_fundamentus_amplitude():
+    """Busca lista de tickers de ações brasileiras do Fundamentus, filtrando por liquidez > 0."""
+    st.info("Buscando lista de tickers do Fundamentus (Liq. > 0)... (Cache de 8h)")
+    try:
+        url = "https://www.fundamentus.com.br/resultado.php"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers)
+        response.encoding = 'latin-1'
 
-    df = tentar_baixar(ano)
-    if df is None or df.empty:
-        st.warning(f"Dados de {ano} não encontrados ou vazios. Tentando ano anterior ({ano-1})...")
-        df = tentar_baixar(ano - 1)
-
-    if df is not None and not df.empty:
-        try:
-            filtro_acoes = df['Valor_Mobiliario'].str.contains('Ordin|Preferenci', case=False, na=False, regex=True)
-            filtro_mercado = df['Mercado'] == 'Bolsa'
-            df_filtrado = df[filtro_acoes & filtro_mercado]
-            return df_filtrado['Codigo_Negociacao'].dropna().unique().tolist()
-        except Exception as e:
-            st.error(f"Erro ao processar arquivo da CVM: {e}")
-            return None
-    else:
-        st.error(f"Erro ao obter tickers da CVM (Tentativas {ano} e {ano-1} falharam ou arquivos estão vazios).")
+        tables = pd.read_html(response.text, decimal=',', thousands='.')
+        if tables:
+            df = tables[0]
+            # Filtra por liquidez nos últimos 2 meses > 0
+            df['Liq.2meses'] = pd.to_numeric(df['Liq.2meses'], errors='coerce').fillna(0)
+            df_filtrado = df[df['Liq.2meses'] > 0]
+            tickers = df_filtrado['Papel'].tolist()
+            return [t for t in tickers if isinstance(t, str) and len(t) >= 4]
+        return None
+    except Exception as e:
+        st.error(f"Erro ao buscar tickers do Fundamentus: {e}")
         return None
 
 @st.cache_data(ttl=3600*8) # Cache de 8 horas

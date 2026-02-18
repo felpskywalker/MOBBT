@@ -5,7 +5,7 @@ import yfinance as yf
 from scipy import stats
 import numpy as np
 from datetime import datetime, timedelta
-from src.data_loaders.amplitude import obter_tickers_cvm_amplitude, obter_precos_historicos_amplitude
+from src.data_loaders.amplitude import obter_tickers_fundamentus_amplitude, obter_precos_historicos_amplitude
 from src.models.amplitude import calcular_indicadores_amplitude, analisar_retornos_por_faixa
 from src.models.indices import get_sector_indices_chart 
 from src.data_loaders.fred_api import carregar_dados_fred
@@ -36,7 +36,7 @@ def render():
 
     if 'df_indicadores' not in st.session_state or 'df_analise_base' not in st.session_state:
         with st.spinner("Realizando análise de amplitude... Este processo pode ser demorado na primeira vez..."):
-            tickers_cvm = obter_tickers_cvm_amplitude()
+            tickers_cvm = obter_tickers_fundamentus_amplitude()
             if tickers_cvm:
                 precos = obter_precos_historicos_amplitude(tickers_cvm, anos_historico=ANOS_HISTORICO)
                 df_analise_base_final = pd.DataFrame(index=precos.index).sort_index()
