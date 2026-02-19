@@ -111,30 +111,11 @@ def analisar_dados_insiders(_df_mov, _df_cad, meses_selecionados, force_refresh=
 
 @st.cache_data
 def criar_lookup_ticker_cnpj(_df_cad):
-    """Cria lookup Ticker → CNPJ usando dados FCA + Fundamentus como complemento."""
+    """Cria lookup Ticker → CNPJ usando dados FCA."""
     df_tickers = _df_cad[['CNPJ_Companhia', 'Codigo_Negociacao']].dropna()
     df_tickers = df_tickers.drop_duplicates(subset=['Codigo_Negociacao'])
     
     lookup = pd.Series(df_tickers['CNPJ_Companhia'].values, index=df_tickers['Codigo_Negociacao']).to_dict()
-    
-    # Complementa com Fundamentus: para nomes de empresas que existem no CVM
-    # mas cujo ticker não está no FCA, tenta mapear via Fundamentus
-    df_fundamentus = obter_mapeamento_empresas_fundamentus()
-    if not df_fundamentus.empty:
-        # Adiciona tickers do Fundamentus que não estão no lookup FCA
-        for _, row in df_fundamentus.iterrows():
-            ticker = row['Papel']
-            if ticker not in lookup:
-                # Tenta encontrar o CNPJ pela Razão Social nos dados CVM
-                razao = row.get('Razao_Social', '')
-                match_cvm = _df_cad[
-                    _df_cad['Nome_Companhia'].astype(str).str.upper().str.contains(
-                        razao[:20].upper(), na=False
-                    )
-                ] if razao and len(razao) > 5 else pd.DataFrame()
-                if not match_cvm.empty:
-                    cnpj = match_cvm['CNPJ_Companhia'].iloc[0]
-                    lookup[ticker] = cnpj
 
     return lookup
 
