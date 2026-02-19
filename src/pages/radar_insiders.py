@@ -20,28 +20,32 @@ def render():
     st.markdown("---")
 
     ANO_ATUAL = datetime.now().year
-    URL_MOVIMENTACOES = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/VLMO/DADOS/vlmo_cia_aberta_{ANO_ATUAL}.zip"
-    URL_CADASTRO = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{ANO_ATUAL}.zip"
-    CSV_MOVIMENTACOES = f"vlmo_cia_aberta_con_{ANO_ATUAL}.csv"
-    CSV_CADASTRO = f"fca_cia_aberta_valor_mobiliario_{ANO_ATUAL}.csv"
+    ANO_ANTERIOR = ANO_ATUAL - 1
 
-    # Carrega os dados base com cache
-    with st.spinner(f"Baixando e pré-processando dados da CVM ({ANO_ATUAL})..."):
-        df_mov_bruto = baixar_e_extrair_zip_cvm(URL_MOVIMENTACOES, CSV_MOVIMENTACOES, show_error=False)
-        df_cad_bruto = baixar_e_extrair_zip_cvm(URL_CADASTRO, CSV_CADASTRO, show_error=False)
+    # --- Carrega dados do ano atual ---
+    URL_MOV_ATUAL = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/VLMO/DADOS/vlmo_cia_aberta_{ANO_ATUAL}.zip"
+    URL_CAD_ATUAL = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{ANO_ATUAL}.zip"
+    CSV_MOV_ATUAL = f"vlmo_cia_aberta_con_{ANO_ATUAL}.csv"
+    CSV_CAD_ATUAL = f"fca_cia_aberta_valor_mobiliario_{ANO_ATUAL}.csv"
 
-    if df_mov_bruto is None or df_cad_bruto is None:
-        ANO_ANTERIOR = ANO_ATUAL - 1
-        st.warning(f"Dados de {ANO_ATUAL} ainda não disponíveis na CVM. Utilizando dados de {ANO_ANTERIOR}...")
-        
-        URL_MOVIMENTACOES = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/VLMO/DADOS/vlmo_cia_aberta_{ANO_ANTERIOR}.zip"
-        URL_CADASTRO = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{ANO_ANTERIOR}.zip"
-        CSV_MOVIMENTACOES = f"vlmo_cia_aberta_con_{ANO_ANTERIOR}.csv"
-        CSV_CADASTRO = f"fca_cia_aberta_valor_mobiliario_{ANO_ANTERIOR}.csv"
-        
-        with st.spinner(f"Baixando dados do ano anterior ({ANO_ANTERIOR})..."):
-            df_mov_bruto = baixar_e_extrair_zip_cvm(URL_MOVIMENTACOES, CSV_MOVIMENTACOES, show_error=True)
-            df_cad_bruto = baixar_e_extrair_zip_cvm(URL_CADASTRO, CSV_CADASTRO, show_error=True)
+    # --- Carrega dados do ano anterior ---
+    URL_MOV_ANTERIOR = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/VLMO/DADOS/vlmo_cia_aberta_{ANO_ANTERIOR}.zip"
+    URL_CAD_ANTERIOR = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{ANO_ANTERIOR}.zip"
+    CSV_MOV_ANTERIOR = f"vlmo_cia_aberta_con_{ANO_ANTERIOR}.csv"
+    CSV_CAD_ANTERIOR = f"fca_cia_aberta_valor_mobiliario_{ANO_ANTERIOR}.csv"
+
+    with st.spinner(f"Baixando dados da CVM ({ANO_ANTERIOR} e {ANO_ATUAL})..."):
+        df_mov_atual = baixar_e_extrair_zip_cvm(URL_MOV_ATUAL, CSV_MOV_ATUAL, show_error=False)
+        df_cad_atual = baixar_e_extrair_zip_cvm(URL_CAD_ATUAL, CSV_CAD_ATUAL, show_error=False)
+        df_mov_anterior = baixar_e_extrair_zip_cvm(URL_MOV_ANTERIOR, CSV_MOV_ANTERIOR, show_error=False)
+        df_cad_anterior = baixar_e_extrair_zip_cvm(URL_CAD_ANTERIOR, CSV_CAD_ANTERIOR, show_error=False)
+
+    # Combina movimentações dos dois anos
+    dfs_mov = [df for df in [df_mov_anterior, df_mov_atual] if df is not None]
+    dfs_cad = [df for df in [df_cad_anterior, df_cad_atual] if df is not None]
+
+    df_mov_bruto = pd.concat(dfs_mov, ignore_index=True) if dfs_mov else None
+    df_cad_bruto = pd.concat(dfs_cad, ignore_index=True) if dfs_cad else None
 
     if df_mov_bruto is not None and df_cad_bruto is not None:
         df_mov_bruto['Data_Movimentacao'] = pd.to_datetime(df_mov_bruto['Data_Movimentacao'], errors='coerce')
