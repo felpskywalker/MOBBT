@@ -418,47 +418,64 @@ def calculate_gex_dataframe(
     total_options = len(df)
     print(f"[IV] Options with valid IV before fallback: {iv_from_market}/{total_options}")
     
-    # Second pass: Approximate IV for options without valid IV using nearest strike
-    def get_fallback_iv(row):
+    # Second pass: Interpolate IV for options without valid IV using moneyness-based interpolation
+    # This respects the volatility skew (OTM puts have higher IV than ATM)
+    def get_fallback_iv_interpolated(row):
         # Check if IV is valid (not null AND > 0.001)
         if pd.notna(row['iv']) and row['iv'] > 0.001:
             return row['iv'], row.get('iv_source', 'SOURCE')
         
-        # Find options of same type with valid IV
-        # First try same expiry if expiry is valid
+        # Try interpolation using same expiry and type
         if pd.notna(row.get('expiry')):
-            same_expiry_type = df[
+            anchor_points = df[
                 (df['type'] == row['type']) & 
                 (df['expiry'] == row['expiry']) &
                 (df['iv'].notna()) &
                 (df['iv'] > 0.001)
-            ]
+            ].sort_values('strike')
             
-            if not same_expiry_type.empty:
-                strike_diffs = abs(same_expiry_type['strike'] - row['strike'])
-                nearest_idx = strike_diffs.idxmin()
-                nearest_iv = df.loc[nearest_idx, 'iv']
-                if pd.notna(nearest_iv) and nearest_iv > 0.001:
-                    return nearest_iv, 'NEAREST'
+            if len(anchor_points) >= 2:
+                # Interpolate by moneyness ln(K/S) to respect the skew shape
+                anchor_points = anchor_points.copy()
+                anchor_points['moneyness'] = np.log(anchor_points['strike'] / spot)
+                target_moneyness = np.log(row['strike'] / spot)
+                
+                iv_interp = np.interp(
+                    target_moneyness,
+                    anchor_points['moneyness'].values,
+                    anchor_points['iv'].values
+                )
+                return iv_interp, 'INTERPOLATED'
+            
+            elif len(anchor_points) == 1:
+                return anchor_points['iv'].iloc[0], 'NEAREST'
         
-        # Fallback: same type, any expiry
+        # Fallback: same type, any expiry — also try interpolation
         same_type_with_iv = df[
             (df['type'] == row['type']) & 
             (df['iv'].notna()) &
             (df['iv'] > 0.001)
-        ]
+        ].sort_values('strike')
         
-        if not same_type_with_iv.empty:
-            strike_diffs = abs(same_type_with_iv['strike'] - row['strike'])
-            nearest_idx = strike_diffs.idxmin()
-            nearest_iv = df.loc[nearest_idx, 'iv']
-            if pd.notna(nearest_iv) and nearest_iv > 0.001:
-                return nearest_iv, 'NEAREST'
+        if len(same_type_with_iv) >= 2:
+            same_type_with_iv = same_type_with_iv.copy()
+            same_type_with_iv['moneyness'] = np.log(same_type_with_iv['strike'] / spot)
+            target_moneyness = np.log(row['strike'] / spot)
+            
+            iv_interp = np.interp(
+                target_moneyness,
+                same_type_with_iv['moneyness'].values,
+                same_type_with_iv['iv'].values
+            )
+            return iv_interp, 'INTERPOLATED'
+        
+        elif len(same_type_with_iv) == 1:
+            return same_type_with_iv['iv'].iloc[0], 'NEAREST'
         
         return volatility, 'DEFAULT'  # No reference, use default (22%)
     
-    # Apply fallback and track source
-    fallback_results = df.apply(get_fallback_iv, axis=1)
+    # Apply interpolation fallback and track source
+    fallback_results = df.apply(get_fallback_iv_interpolated, axis=1)
     df['iv'] = fallback_results.apply(lambda x: x[0])
     df['iv_source'] = fallback_results.apply(lambda x: x[1])
     
@@ -468,10 +485,12 @@ def calculate_gex_dataframe(
     df.loc[invalid_iv_mask, 'iv'] = volatility
     
     # Log IV statistics
+    iv_from_interpolated = (df['iv_source'] == 'INTERPOLATED').sum()
     iv_from_nearest = (df['iv_source'] == 'NEAREST').sum()
     iv_from_default = (df['iv_source'] == 'DEFAULT').sum()
     
     print(f"[IV] IV from market prices: {iv_from_market}")
+    print(f"[IV] IV from interpolation (moneyness skew): {iv_from_interpolated}")
     print(f"[IV] IV from nearest strike: {iv_from_nearest}")
     print(f"[IV] IV from default ({volatility*100:.0f}%): {iv_from_default}")
     
