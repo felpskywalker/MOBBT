@@ -114,6 +114,7 @@ with st.sidebar:
             "Merger Arbitrage",
             "Exportador DFP",
             "Minha Carteira",
+            "RRG Setorial",
         ],
         icons=[
             "house",
@@ -134,6 +135,7 @@ with st.sidebar:
             "arrow-left-right",
             "file-earmark-spreadsheet",
             "bookmark-star",
+            "diagram-3",
         ],
         menu_icon="speedometer2",
         default_index=0,
@@ -233,3 +235,7 @@ elif pagina_selecionada == "Exportador DFP":
 elif pagina_selecionada == "Minha Carteira":
     from src.pages import minha_carteira
     minha_carteira.render()
+
+elif pagina_selecionada == "RRG Setorial":
+    from src.pages import rrg_chart
+    rrg_chart.render()
