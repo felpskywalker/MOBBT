@@ -66,41 +66,38 @@ def _fetch_index_composition(index_code: str) -> pd.DataFrame:
 #  Ref: github.com/BennyThadikaran/RRG-Lite
 # ─────────────────────────────────────────────
 
-WINDOW = 14          # Janela para SMA e StdDev
-PERIOD = 52          # Período base para ROC (52 dias úteis ≈ ~10 semanas)
+WINDOW = 14   # Período para SMA e StdDev
+PERIOD = 52   # Período base para ROC
 
 
-def _compute_rrg_axes(sector_series: pd.Series,
-                      benchmark_series: pd.Series) -> pd.DataFrame:
+def _calculate_rs(stock_ser: pd.Series, benchmark_ser: pd.Series) -> pd.Series:
     """
-    Calcula RS-Ratio (eixo X) e RS-Momentum (eixo Y) seguindo RRG-Lite.
+    Retorna o RS-Ratio como múltiplo do desvio padrão da SMA(RS).
+    Cópia fiel de RRG-Lite: RRG._calculate_rs
 
-    1. RS = (sector / benchmark) * 100
-    2. RS-Ratio = Z-Score(RS, window=14) + 100
-    3. ROC = (RS-Ratio / RS-Ratio_base - 1) * 100  (base = valor PERIOD períodos atrás)
-    4. RS-Momentum = Z-Score(ROC, window=14) + 100
+    - RS = (stock / benchmark) * 100
+    - Z-Score = (RS - SMA(RS)) / StdDev(RS)
+    - RS-Ratio = Z-Score + 100
     """
-    # Passo 1 — Força Relativa
-    rs = (sector_series / benchmark_series) * 100
+    rs = (stock_ser / benchmark_ser) * 100
+    rs_sma = rs.rolling(window=WINDOW)
+    return ((rs - rs_sma.mean()) / rs_sma.std(ddof=1)).dropna() + 100
 
-    # Passo 2 — RS-Ratio (Z-Score padronizado + 100)
-    rs_roll = rs.rolling(window=WINDOW)
-    rs_ratio = ((rs - rs_roll.mean()) / rs_roll.std(ddof=1)) + 100
 
-    # Passo 3 — ROC usando base fixa (PERIOD períodos atrás)
-    #   Referência RRG-Lite: base_rs = rs_ratio.iloc[-period]
-    #   Aqui usamos shift(PERIOD) para calcular em toda a série
-    base_rs = rs_ratio.shift(PERIOD)
+def _calculate_momentum(rs_ratio: pd.Series) -> pd.Series:
+    """
+    Retorna o RS-Momentum como múltiplo do desvio padrão da SMA(ROC).
+    Cópia fiel de RRG-Lite: RRG._calculate_momentum
+
+    - base_rs = rs_ratio no ponto fixo [-PERIOD] (escalar único)
+    - ROC = (rs_ratio / base_rs - 1) * 100
+    - Z-Score = (ROC - SMA(ROC)) / StdDev(ROC)
+    - RS-Momentum = Z-Score + 100
+    """
+    base_rs = rs_ratio.iloc[-PERIOD]
     rs_roc = ((rs_ratio / base_rs) - 1) * 100
-
-    # Passo 4 — RS-Momentum (Z-Score do ROC + 100)
-    roc_roll = rs_roc.rolling(window=WINDOW)
-    rs_momentum = ((rs_roc - roc_roll.mean()) / roc_roll.std(ddof=1)) + 100
-
-    return pd.DataFrame({
-        'RS_Ratio': rs_ratio,
-        'RS_Momentum': rs_momentum
-    })
+    roc_sma = rs_roc.rolling(window=WINDOW)
+    return ((rs_roc - roc_sma.mean()) / roc_sma.std(ddof=1)).dropna() + 100
 
 
 # ─────────────────────────────────────────────
@@ -365,16 +362,41 @@ def _load_rrg_data(tail_length: int = 10):
     if sector_indices.empty:
         return None, index_meta, "Não foi possível construir índices setoriais."
 
-    # 4. Compute RRG axes (daily)
+    # 4. Compute RRG axes (daily) — replicando RRG-Lite fielmente
     benchmark_daily = prices['^BVSP'].ffill()
     sector_daily = sector_indices.ffill()
 
+    # Mínimo de dados necessários: 2*WINDOW + PERIOD + tail
+    min_len = WINDOW * 2 + PERIOD + tail_length
+
     rrg_data = {}
     for code in sector_daily.columns:
-        result = _compute_rrg_axes(sector_daily[code], benchmark_daily)
-        tail = result.dropna().tail(tail_length)
-        if len(tail) >= 2:
-            rrg_data[code] = result
+        ser = sector_daily[code].dropna()
+        bm = benchmark_daily.reindex(ser.index).dropna()
+        # Alinhar índices
+        common = ser.index.intersection(bm.index)
+        ser = ser.loc[common]
+        bm = bm.loc[common]
+
+        if len(ser) < min_len:
+            continue
+
+        rs_ratio = _calculate_rs(ser, bm)
+
+        if len(rs_ratio) < PERIOD + WINDOW + tail_length:
+            continue
+
+        rs_momentum = _calculate_momentum(rs_ratio)
+
+        if len(rs_momentum) < tail_length:
+            continue
+
+        # Alinhar RS-Ratio e RS-Momentum pelo índice comum
+        common_idx = rs_ratio.index.intersection(rs_momentum.index)
+        rrg_data[code] = pd.DataFrame({
+            'RS_Ratio': rs_ratio.loc[common_idx],
+            'RS_Momentum': rs_momentum.loc[common_idx],
+        })
 
     if not rrg_data:
         return None, index_meta, "Dados insuficientes para calcular RRG."
