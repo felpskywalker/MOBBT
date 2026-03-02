@@ -239,7 +239,7 @@ def _plot_rrg_plotly(rrg_data: dict, index_meta: dict, tail_length: int = 10) ->
         plot_bgcolor='#0e1117',
         title=dict(
             text='Relative Rotation Graph — Índices Setoriais B3<br>'
-                 f'<span style="font-size:12px">Tail: {tail_length} dias  |  Benchmark: IBOVESPA</span>',
+                 f'<span style="font-size:12px">Tail: {tail_length} semanas  |  Benchmark: IBOVESPA</span>',
             font=dict(size=18, color='white'),
             x=0.5,
         ),
@@ -362,17 +362,18 @@ def _load_rrg_data(tail_length: int = 10):
     if sector_indices.empty:
         return None, index_meta, "Não foi possível construir índices setoriais."
 
-    # 4. Compute RRG axes (daily) — replicando RRG-Lite fielmente
+    # 4. Resample to weekly + Compute RRG axes — replicando RRG-Lite
     benchmark_daily = prices['^BVSP'].ffill()
-    sector_daily = sector_indices.ffill()
+    sector_weekly = sector_indices.resample('W').last().ffill()
+    benchmark_weekly = benchmark_daily.resample('W').last().ffill()
 
     # Mínimo de dados necessários: 2*WINDOW + PERIOD + tail
     min_len = WINDOW * 2 + PERIOD + tail_length
 
     rrg_data = {}
-    for code in sector_daily.columns:
-        ser = sector_daily[code].dropna()
-        bm = benchmark_daily.reindex(ser.index).dropna()
+    for code in sector_weekly.columns:
+        ser = sector_weekly[code].dropna()
+        bm = benchmark_weekly.reindex(ser.index).dropna()
         # Alinhar índices
         common = ser.index.intersection(bm.index)
         ser = ser.loc[common]
@@ -411,7 +412,7 @@ def render():
     # Controles
     col1, col2 = st.columns([1, 4])
     with col1:
-        tail_length = st.slider("Dias (tail)", min_value=5, max_value=60, value=20, step=1)
+        tail_length = st.slider("Semanas (tail)", min_value=4, max_value=20, value=10, step=1)
 
     # Carregar dados
     with st.spinner("Carregando dados RRG… (composição B3, preços yfinance, cálculos)"):
@@ -441,5 +442,5 @@ def render():
 
         - **Eixo X (RS-Ratio):** força relativa normalizada (Z-Score + 100)
         - **Eixo Y (RS-Momentum):** taxa de mudança da força relativa
-        - **Tail:** trajetória dos últimos dias (pontos mais opacos = mais recentes)
+        - **Tail:** trajetória das últimas semanas (pontos mais opacos = mais recentes)
         """)
