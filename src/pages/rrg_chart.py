@@ -63,26 +63,39 @@ def _fetch_index_composition(index_code: str) -> pd.DataFrame:
 
 # ─────────────────────────────────────────────
 #  Core RRG-Lite Calculations
+#  Ref: github.com/BennyThadikaran/RRG-Lite
 # ─────────────────────────────────────────────
 
-WINDOW = 14
-ROC_LAG = 1
+WINDOW = 14          # Janela para SMA e StdDev
+PERIOD = 52          # Período base para ROC (52 dias úteis ≈ ~10 semanas)
 
 
 def _compute_rrg_axes(sector_series: pd.Series,
                       benchmark_series: pd.Series) -> pd.DataFrame:
-    """Calcula RS-Ratio (eixo X) e RS-Momentum (eixo Y) seguindo RRG-Lite."""
+    """
+    Calcula RS-Ratio (eixo X) e RS-Momentum (eixo Y) seguindo RRG-Lite.
+
+    1. RS = (sector / benchmark) * 100
+    2. RS-Ratio = Z-Score(RS, window=14) + 100
+    3. ROC = (RS-Ratio / RS-Ratio_base - 1) * 100  (base = valor PERIOD períodos atrás)
+    4. RS-Momentum = Z-Score(ROC, window=14) + 100
+    """
+    # Passo 1 — Força Relativa
     rs = (sector_series / benchmark_series) * 100
 
-    rs_sma = rs.rolling(WINDOW).mean()
-    rs_std = rs.rolling(WINDOW).std()
-    rs_ratio = ((rs - rs_sma) / rs_std) + 100
+    # Passo 2 — RS-Ratio (Z-Score padronizado + 100)
+    rs_roll = rs.rolling(window=WINDOW)
+    rs_ratio = ((rs - rs_roll.mean()) / rs_roll.std(ddof=1)) + 100
 
-    roc = (rs_ratio / rs_ratio.shift(ROC_LAG) - 1) * 100
+    # Passo 3 — ROC usando base fixa (PERIOD períodos atrás)
+    #   Referência RRG-Lite: base_rs = rs_ratio.iloc[-period]
+    #   Aqui usamos shift(PERIOD) para calcular em toda a série
+    base_rs = rs_ratio.shift(PERIOD)
+    rs_roc = ((rs_ratio / base_rs) - 1) * 100
 
-    roc_sma = roc.rolling(WINDOW).mean()
-    roc_std = roc.rolling(WINDOW).std()
-    rs_momentum = ((roc - roc_sma) / roc_std) + 100
+    # Passo 4 — RS-Momentum (Z-Score do ROC + 100)
+    roc_roll = rs_roc.rolling(window=WINDOW)
+    rs_momentum = ((rs_roc - roc_roll.mean()) / roc_roll.std(ddof=1)) + 100
 
     return pd.DataFrame({
         'RS_Ratio': rs_ratio,
@@ -229,7 +242,7 @@ def _plot_rrg_plotly(rrg_data: dict, index_meta: dict, tail_length: int = 10) ->
         plot_bgcolor='#0e1117',
         title=dict(
             text='Relative Rotation Graph — Índices Setoriais B3<br>'
-                 f'<span style="font-size:12px">Tail: {tail_length} semanas  |  Benchmark: IBOVESPA</span>',
+                 f'<span style="font-size:12px">Tail: {tail_length} dias  |  Benchmark: IBOVESPA</span>',
             font=dict(size=18, color='white'),
             x=0.5,
         ),
@@ -304,7 +317,7 @@ def _load_rrg_data(tail_length: int = 10):
 
     # 2. Download prices
     all_tickers_list = list(all_tickers) + ['^BVSP']
-    start_date = '2023-06-01'
+    start_date = '2023-06-01'   # ~2 anos garante warmup suficiente para PERIOD=52
 
     try:
         raw = yf.download(all_tickers_list, start=start_date, progress=False)
@@ -352,15 +365,13 @@ def _load_rrg_data(tail_length: int = 10):
     if sector_indices.empty:
         return None, index_meta, "Não foi possível construir índices setoriais."
 
-    # 4. Resample to weekly
+    # 4. Compute RRG axes (daily)
     benchmark_daily = prices['^BVSP'].ffill()
-    sector_weekly = sector_indices.resample('W').last().ffill()
-    benchmark_weekly = benchmark_daily.resample('W').last().ffill()
+    sector_daily = sector_indices.ffill()
 
-    # 5. Compute RRG axes
     rrg_data = {}
-    for code in sector_weekly.columns:
-        result = _compute_rrg_axes(sector_weekly[code], benchmark_weekly)
+    for code in sector_daily.columns:
+        result = _compute_rrg_axes(sector_daily[code], benchmark_daily)
         tail = result.dropna().tail(tail_length)
         if len(tail) >= 2:
             rrg_data[code] = result
@@ -378,7 +389,7 @@ def render():
     # Controles
     col1, col2 = st.columns([1, 4])
     with col1:
-        tail_length = st.slider("Semanas (tail)", min_value=4, max_value=20, value=10, step=1)
+        tail_length = st.slider("Dias (tail)", min_value=5, max_value=60, value=20, step=1)
 
     # Carregar dados
     with st.spinner("Carregando dados RRG… (composição B3, preços yfinance, cálculos)"):
@@ -408,5 +419,5 @@ def render():
 
         - **Eixo X (RS-Ratio):** força relativa normalizada (Z-Score + 100)
         - **Eixo Y (RS-Momentum):** taxa de mudança da força relativa
-        - **Tail:** trajetória das últimas semanas (pontos mais opacos = mais recentes)
+        - **Tail:** trajetória dos últimos dias (pontos mais opacos = mais recentes)
         """)
