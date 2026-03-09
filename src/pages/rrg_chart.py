@@ -62,42 +62,38 @@ def _fetch_index_composition(index_code: str) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────
-#  Core RRG-Lite Calculations
-#  Ref: github.com/BennyThadikaran/RRG-Lite
+#  Core RRG Calculations (Julius de Kempenaer Style)
+#  Retrieved from /Sector Rotation Map/api_server.py
 # ─────────────────────────────────────────────
 
-WINDOW = 14   # Período para SMA e StdDev
-PERIOD = 52   # Período base para ROC
-
-
-def _calculate_rs(stock_ser: pd.Series, benchmark_ser: pd.Series) -> pd.Series:
+def _calculate_rrg(stock_ser: pd.Series, benchmark_ser: pd.Series) -> pd.DataFrame:
     """
-    Retorna o RS-Ratio como múltiplo do desvio padrão da SMA(RS).
-    Cópia fiel de RRG-Lite: RRG._calculate_rs
-
-    - RS = (stock / benchmark) * 100
-    - Z-Score = (RS - SMA(RS)) / StdDev(RS)
-    - RS-Ratio = Z-Score + 100
+    Compute RS-Ratio and RS-Momentum using robust Exponential Smoothing (EWM) 
+    and long-term (52-week) rolling standardization, identical to the standard RRG logic.
     """
-    rs = (stock_ser / benchmark_ser) * 100
-    rs_sma = rs.rolling(window=WINDOW)
-    return ((rs - rs_sma.mean()) / rs_sma.std(ddof=1)).dropna() + 100
+    raw_rs = (stock_ser / benchmark_ser) * 100
+    rs_smoothed = raw_rs.ewm(span=10, adjust=False).mean()
 
+    rolling_mean = rs_smoothed.rolling(window=52, min_periods=20).mean()
+    rolling_std = rs_smoothed.rolling(window=52, min_periods=20).std()
 
-def _calculate_momentum(rs_ratio: pd.Series) -> pd.Series:
-    """
-    Retorna o RS-Momentum como múltiplo do desvio padrão da SMA(ROC).
-    Cópia fiel de RRG-Lite: RRG._calculate_momentum
+    # Avoid division by zero
+    rolling_std = rolling_std.replace(0, np.nan)
+    rs_ratio = 100 + ((rs_smoothed - rolling_mean) / rolling_std) * 2
 
-    - base_rs = rs_ratio no ponto fixo [-PERIOD] (escalar único)
-    - ROC = (rs_ratio / base_rs - 1) * 100
-    - Z-Score = (ROC - SMA(ROC)) / StdDev(ROC)
-    - RS-Momentum = Z-Score + 100
-    """
-    base_rs = rs_ratio.iloc[-PERIOD]
-    rs_roc = ((rs_ratio / base_rs) - 1) * 100
-    roc_sma = rs_roc.rolling(window=WINDOW)
-    return ((rs_roc - roc_sma.mean()) / roc_sma.std(ddof=1)).dropna() + 100
+    rs_momentum_raw = rs_ratio - rs_ratio.shift(1)
+    mom_smoothed = rs_momentum_raw.ewm(span=5, adjust=False).mean()
+    mom_mean = mom_smoothed.rolling(window=52, min_periods=20).mean()
+    mom_std = mom_smoothed.rolling(window=52, min_periods=20).std()
+    mom_std = mom_std.replace(0, np.nan)
+    rs_momentum = 100 + ((mom_smoothed - mom_mean) / mom_std) * 2
+
+    valid = rs_ratio.notna() & rs_momentum.notna()
+    
+    return pd.DataFrame({
+        'RS_Ratio': rs_ratio[valid],
+        'RS_Momentum': rs_momentum[valid]
+    })
 
 
 # ─────────────────────────────────────────────
@@ -367,8 +363,8 @@ def _load_rrg_data(tail_length: int = 10):
     sector_weekly = sector_indices.resample('W').last().ffill()
     benchmark_weekly = benchmark_daily.resample('W').last().ffill()
 
-    # Mínimo de dados necessários: 2*WINDOW + PERIOD + tail
-    min_len = WINDOW * 2 + PERIOD + tail_length
+    # Mínimo de dados necessários: 52 (rolling window) + tail
+    min_len = 52 + tail_length
 
     rrg_data = {}
     for code in sector_weekly.columns:
@@ -382,22 +378,12 @@ def _load_rrg_data(tail_length: int = 10):
         if len(ser) < min_len:
             continue
 
-        rs_ratio = _calculate_rs(ser, bm)
+        rrg_df = _calculate_rrg(ser, bm)
 
-        if len(rs_ratio) < PERIOD + WINDOW + tail_length:
+        if len(rrg_df) < tail_length:
             continue
 
-        rs_momentum = _calculate_momentum(rs_ratio)
-
-        if len(rs_momentum) < tail_length:
-            continue
-
-        # Alinhar RS-Ratio e RS-Momentum pelo índice comum
-        common_idx = rs_ratio.index.intersection(rs_momentum.index)
-        rrg_data[code] = pd.DataFrame({
-            'RS_Ratio': rs_ratio.loc[common_idx],
-            'RS_Momentum': rs_momentum.loc[common_idx],
-        })
+        rrg_data[code] = rrg_df
 
     if not rrg_data:
         return None, index_meta, "Dados insuficientes para calcular RRG."
